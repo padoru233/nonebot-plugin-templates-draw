@@ -8,7 +8,7 @@
 
 # nonebot-plugin-figurine
 
-_✨ NoneBot 一个图片手办化插件 ✨_
+_✨ NoneBot2 一个图片手办化插件 ✨_
 
 
 <a href="./LICENSE">

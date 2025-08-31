@@ -31,8 +31,6 @@ __plugin_meta__ = PluginMetadata(
 )
 
 
-print('Gemini API Key:', config.GEMINI_API_KEY, 'GEMINI_API_URL:',config.GEMINI_API_URL)
-
 # 结束匹配器并发送消息
 async def fi(matcher: Matcher, message: str) -> None:
     await matcher.finish(message)

@@ -2,7 +2,7 @@ import httpx, base64, asyncio
 from io import BytesIO
 from typing import List, Optional, Tuple
 from random import randint
-from nonebot import logger, on_command
+from nonebot import logger, on_command, get_driver, get_plugin_config
 from nonebot.adapters import Bot
 from nonebot.adapters.onebot.v11.event import Event, GroupMessageEvent
 from nonebot.adapters.onebot.v11.exception import ActionFailed
@@ -12,7 +12,7 @@ from nonebot.exception import MatcherException
 from nonebot.params import Depends
 from nonebot.plugin import PluginMetadata
 from PIL import Image
-from .config import PluginConfig, config
+from .config import Config
 
 
 usage = """
@@ -26,10 +26,15 @@ __plugin_meta__ = PluginMetadata(
     usage=usage,
     type="application",
     homepage="https://github.com/padoru233/nonebot-plugin-figurine",
-    config=PluginConfig,
+    config=Config,
     supported_adapters={"~onebot.v11"},
 )
 
+plugin_config: Config = get_plugin_config(Config).figurine
+
+@get_driver().on_startup
+async def _():
+    logger.info(f"Gemini API URL: {plugin_config.gemini_api_url}, Gemini API KEY: {plugin_config.gemini_api_key}")
 
 # 结束匹配器并发送消息
 async def fi(matcher: Matcher, message: str) -> None:
@@ -85,16 +90,16 @@ async def get_images_from_reply(bot: Bot, reply_msg_id: int) -> List[Image.Image
 # 调用 Gemini API
 async def call_openai_compatible_api(images: List[Image.Image], prompt: str = None) -> Tuple[Optional[str], Optional[str]]:
 
-    if not config.GEMINI_API_KEY or config.GEMINI_API_KEY == 'xxxxxx':
+    if not plugin_config.gemini_api_key or plugin_config.gemini_api_key == 'xxxxxx':
         raise ValueError("API Key 未配置")
 
     if not prompt:
-        prompt = config.DEFAULT_PROMPT
+        prompt = plugin_config.default_prompt
 
     # 构建API请求
-    url = f"{config.GEMINI_API_URL}/v1/chat/completions"
+    url = f"{plugin_config.gemini_api_url}/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {config.GEMINI_API_KEY}",
+        "Authorization": f"Bearer {plugin_config.gemini_api_key}",
         "Content-Type": "application/json",
     }
 

@@ -1,10 +1,11 @@
 [tool.poetry]
 name = "nonebot-plugin-figurine"
-version = "0.1.0"
+version = "0.1.1.post1"
 description = "NoneBot2 一个图片手办化插件"
 authors = ["padoru233 <wr15624916906@gmail.com>"]
 readme = "README.md"
 packages = [{include = "nonebot_plugin_figurine"}]
+homepage = "hhttps://github.com/padoru233/nonebot-plugin-figurine"
 repository = "https://github.com/padoru233/nonebot-plugin-figurine"
 keywords = ["nonebot2", "nonebot-plugin-figurine"]
 

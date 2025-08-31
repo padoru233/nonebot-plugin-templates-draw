@@ -34,7 +34,7 @@ plugin_config: Config = get_plugin_config(Config).figurine
 
 @get_driver().on_startup
 async def _():
-    logger.info(f"Gemini API URL: {plugin_config.gemini_api_url}, Gemini API KEY: {plugin_config.gemini_api_key}")
+    logger.info(f"Gemini API URL: {plugin_config.gemini_api_url}, Gemini MODEL: {plugin_config.gemini_model}")
 
 # 结束匹配器并发送消息
 async def fi(matcher: Matcher, message: str) -> None:
@@ -120,7 +120,7 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
         })
 
     payload = {
-        "model": config.GEMINI_MODEL,
+        "model": plugin_config.gemini_model,
         "messages": [{"role": "user", "content": content}],
         "max_tokens": 1000,
     }

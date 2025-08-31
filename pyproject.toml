@@ -5,7 +5,7 @@ description = "NoneBot2 一个图片手办化插件"
 authors = ["padoru233 <wr15624916906@gmail.com>"]
 readme = "README.md"
 packages = [{include = "nonebot_plugin_figurine"}]
-homepage = "hhttps://github.com/padoru233/nonebot-plugin-figurine"
+homepage = "https://github.com/padoru233/nonebot-plugin-figurine"
 repository = "https://github.com/padoru233/nonebot-plugin-figurine"
 keywords = ["nonebot2", "nonebot-plugin-figurine"]
 

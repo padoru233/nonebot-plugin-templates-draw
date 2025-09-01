@@ -110,6 +110,7 @@ async def _get_avatar_image(bot: Bot, user_id: int, group_id: Optional[int] = No
 
         # 尝试获取用户信息，主要是为了确认用户存在，并记录日志
         # (这部分可以省略，因为主要目的是获取头像，而不是用户信息本身)
+        """
         if group_id:
             try:
                 await bot.get_group_member_info(group_id=group_id, user_id=user_id, no_cache=True)
@@ -123,7 +124,7 @@ async def _get_avatar_image(bot: Bot, user_id: int, group_id: Optional[int] = No
                 logger.debug(f"Fetched stranger info for {user_id}, using constructed avatar URL: {avatar_url}")
             except ActionFailed as e:
                 logger.debug(f"Could not get stranger info for {user_id}: {e.message}")
-                # Just use constructed URL
+        """
 
         if avatar_url:
             async with httpx.AsyncClient() as client:
@@ -170,7 +171,7 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
     payload = {
         "model": plugin_config.gemini_model,
         "messages": [{"role": "user", "content": content}],
-        "max_tokens": 1000,
+        "max_tokens": 32768,
     }
 
     max_total_attempts = plugin_config.max_total_attempts

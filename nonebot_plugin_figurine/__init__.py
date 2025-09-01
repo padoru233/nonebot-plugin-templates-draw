@@ -197,7 +197,6 @@ figurine_cmd = on_command(
 
 @figurine_cmd.handle()
 async def handle_figurine_cmd(bot: Bot, matcher: Matcher, event: GroupMessageEvent, rp = Depends(msg_reply)):
-    """处理手办化命令 - 简化版错误处理，并使用固定回复语"""
 
     # 固定回复语
     SUCCESS_MESSAGE = "手办化完成！"
@@ -240,6 +239,9 @@ async def handle_figurine_cmd(bot: Bot, matcher: Matcher, event: GroupMessageEve
         return  # 正常结束，不需要处理
     except ValueError as e:
         await matcher.finish(f"配置错误: {str(e)}")
+    except ActionFailed as e:
+        logger.error(f"手办化处理失败 (API错误): retcode={e.retcode}, message={e.message}", exc_info=True)
+        await matcher.finish("手办化处理失败，请稍后再试 (API错误)")
     except Exception as e:
         logger.error(f"手办化处理失败: {e}", exc_info=True)
         await matcher.finish("手办化处理失败，请稍后再试")

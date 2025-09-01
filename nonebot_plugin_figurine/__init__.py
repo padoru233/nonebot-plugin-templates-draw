@@ -1,4 +1,5 @@
 import httpx, base64, asyncio
+import re
 from io import BytesIO
 from typing import List, Optional, Tuple
 from random import randint
@@ -71,6 +72,7 @@ async def get_images(event: GroupMessageEvent) -> List[Image.Image]:
 
 # 从回复的消息中获取图片
 async def get_images_from_reply(bot: Bot, reply_msg_id: int) -> List[Image.Image]:
+
     try:
         # 获取回复的消息详情
         msg_data = await bot.get_msg(message_id=reply_msg_id)
@@ -91,6 +93,49 @@ async def get_images_from_reply(bot: Bot, reply_msg_id: int) -> List[Image.Image
     except Exception as e:
         logger.error(f"Error getting images from reply {reply_msg_id}: {e}")
         return []
+
+# 获取用户头像
+async def _get_avatar_image(bot: Bot, user_id: int, group_id: Optional[int] = None) -> Optional[Image.Image]:
+    avatar_url = None
+
+    try:
+
+        # 构造常用的QQ头像URL。s=0表示原始大小。
+        avatar_url = f"https://q1.qlogo.cn/g?b=qq&s=0&nk={user_id}"
+
+        # 尝试获取用户信息，主要是为了确认用户存在，并记录日志
+        # (这部分可以省略，因为主要目的是获取头像，而不是用户信息本身)
+        if group_id:
+            try:
+                await bot.get_group_member_info(group_id=group_id, user_id=user_id, no_cache=True)
+                logger.debug(f"Fetched group member info for {user_id} in {group_id}, using constructed avatar URL: {avatar_url}")
+            except ActionFailed as e:
+                logger.debug(f"Could not get group member info for {user_id} in {group_id}: {e.message}")
+                # Fallback to stranger info or just use constructed URL
+        else:
+            try:
+                await bot.get_stranger_info(user_id=user_id, no_cache=True)
+                logger.debug(f"Fetched stranger info for {user_id}, using constructed avatar URL: {avatar_url}")
+            except ActionFailed as e:
+                logger.debug(f"Could not get stranger info for {user_id}: {e.message}")
+                # Just use constructed URL
+
+        if avatar_url:
+            async with httpx.AsyncClient() as client:
+                r = await client.get(avatar_url, follow_redirects=True, timeout=10)
+            if r.is_success:
+                logger.info(f"Successfully fetched avatar for user {user_id} from {avatar_url}")
+                return Image.open(BytesIO(r.content))
+            else:
+                logger.warning(f"Failed to fetch avatar for user {user_id} from {avatar_url}: HTTP {r.status_code}")
+        else:
+            logger.warning(f"Could not determine avatar URL for user {user_id}")
+
+    except httpx.RequestError as e:
+        logger.warning(f"Network error fetching avatar for user {user_id} from {avatar_url}: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error getting avatar for user {user_id}: {e}", exc_info=True)
+    return None
 
 # 调用 Gemini API
 async def call_openai_compatible_api(images: List[Image.Image], prompt: str = None) -> Tuple[Optional[str], Optional[str]]:
@@ -231,22 +276,67 @@ async def handle_figurine_cmd(bot: Bot, matcher: Matcher, event: GroupMessageEve
     NO_IMAGE_GENERATED_MESSAGE = "手办化处理完成，但未能生成图片，请稍后再试或尝试其他图片。"
 
     try:
-        images: List[Image.Image] = []
+        all_images: List[Image.Image] = []
+        group_id = event.group_id if isinstance(event, GroupMessageEvent) else None
 
+        # 1 获取回复消息中的图片
         if rp:
-            images.extend(await get_images_from_reply(bot, rp))
+            all_images.extend(await get_images_from_reply(bot, rp))
 
-        if not images:
-            images.extend(await get_images(event))
+        # 这里只收集图片，不立即获取头像，临时存储@的用户ID和"自己"的提及，以便在没有其他图片时使用
+        at_user_ids_from_message: List[int] = []
+        mention_self_in_message: bool = False
 
-        if not images:
-            await matcher.finish('请回复包含图片的消息或发送图片')
+        for seg in event.message:
+            if seg.type == "image":
+                url = seg.data["url"]
+                async with httpx.AsyncClient() as client:
+                    r = await client.get(url, follow_redirects=True)
+                if r.is_success:
+                    all_images.append(Image.open(BytesIO(r.content)))
+                else:
+                    logger.error(f"Cannot fetch image from {url} msg#{event.message_id}")
+            elif seg.type == "at":
+                at_user_ids_from_message.append(int(seg.data["qq"]))
+            elif seg.type == "text":
+                text_content = str(seg).strip()
+                # 识别“自己”和@用户
+                words = re.split(r'\s+', text_content)
+                for word in words:
+                    if word == "自己":
+                        mention_self_in_message = True
+                    elif word.startswith("@") and word[1:].isdigit():
+                        at_user_ids_from_message.append(int(word[1:]))
+
+        # 2 如果第一阶段没有收集到任何图片，则尝试获取头像 ---
+        if not all_images:
+            if mention_self_in_message:
+                sender_id = event.sender.user_id
+                avatar = await _get_avatar_image(bot, sender_id, group_id)
+                if avatar:
+                    all_images.append(avatar)
+                else:
+                    logger.warning(f"Could not get avatar for '自己' ({sender_id})")
+
+            # 遍历之前收集到的@用户ID，获取头像
+            for at_user_id in at_user_ids_from_message:
+                avatar = await _get_avatar_image(bot, at_user_id, group_id)
+                if avatar:
+                    all_images.append(avatar)
+                else:
+                    logger.warning(f"Could not get avatar for @{at_user_id} (from text/at segment)")
+
+        # 3. 使用默认prompt
+        final_prompt = plugin_config.default_prompt
+
+        if not all_images:
+            await matcher.finish('请回复包含图片的消息，或发送图片，或@用户/提及自己以获取头像。')
 
         await matcher.send("正在手办化处理中...")
 
         await asyncio.sleep(randint(1, 3))
 
-        image_result, _ = await call_openai_compatible_api(images)
+        image_result, _ = await call_openai_compatible_api(all_images, final_prompt)
 
         message_to_send = Message()
 

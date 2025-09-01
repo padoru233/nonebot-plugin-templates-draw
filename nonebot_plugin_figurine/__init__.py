@@ -9,7 +9,7 @@ from nonebot.adapters.onebot.v11.event import Event, GroupMessageEvent
 from nonebot.adapters.onebot.v11.exception import ActionFailed
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.matcher import Matcher
-from nonebot.exception import MatcherException
+from nonebot.exception import FinishedException
 from nonebot.params import Depends
 from nonebot.plugin import PluginMetadata
 from PIL import Image
@@ -65,10 +65,12 @@ async def msg_reply(event: GroupMessageEvent):
 async def get_images(event: GroupMessageEvent) -> List[Image.Image]:
     msg_images = event.message["image"]
     images: List[Image.Image] = []
+
     for seg in msg_images:
         url = seg.data["url"]
         async with httpx.AsyncClient() as client:
             r = await client.get(url, follow_redirects=True)
+
         if r.is_success:
             images.append(Image.open(BytesIO(r.content)))
         else:
@@ -149,6 +151,7 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
     # 校验 Keys
     keys = plugin_config.gemini_api_keys
     num_keys = len(keys)
+
     if num_keys == 0 or (num_keys == 1 and keys[0] == "xxxxxx"):
         raise ValueError("API Keys 未配置或配置错误")
 
@@ -159,6 +162,7 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
 
     # 构造请求 payload
     content = [{"type": "text", "text": prompt}]
+
     for img in images:
         buf = BytesIO()
         img.save(buf, format="PNG")
@@ -227,7 +231,9 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
 
         # 兼容 error 字段（用 get 避免 KeyError）
         err = result.get("error")
+
         if err:
+
             # err 可能是 dict，也可能是 str
             if isinstance(err, dict):
                 error_msg = err.get("message", "未知错误")
@@ -243,27 +249,35 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
         text_out = None
         img_out = None
         choices = result.get("choices")
+
         if isinstance(choices, list) and choices:
             msg = choices[0].get("message", {}) or {}
             cont = msg.get("content")
+
             if isinstance(cont, str):
                 text_out = cont.strip()
             elif isinstance(cont, list):
                 parts = []
+
                 for part in cont:
+
                     if part.get("type") == "text":
                         parts.append(part.get("text", ""))
                     elif part.get("type") == "image_url":
                         img_out = part.get("image_url", {}).get("url")
+
                         if img_out:
                             break
                 if parts:
                     text_out = "\n".join(parts).strip()
             # 兼容老接口可能把图片放在 message["images"]
             if not img_out and isinstance(msg.get("images"), list):
+
                 for it in msg["images"]:
+
                     if isinstance(it, dict) and "image_url" in it:
                         img_out = it["image_url"].get("url")
+
                         if img_out:
                             break
 
@@ -310,11 +324,14 @@ async def handle_figurine_cmd(bot: Bot, matcher: Matcher, event: GroupMessageEve
         mention_self_in_message: bool = False
 
         for seg in event.message:
+
             if seg.type == "image":
                 url = seg.data["url"]
                 async with httpx.AsyncClient() as client:
                     r = await client.get(url, follow_redirects=True)
+
                 if r.is_success:
+
                     all_images.append(Image.open(BytesIO(r.content)))
                 else:
                     logger.error(f"Cannot fetch image from {url} msg#{event.message_id}")
@@ -323,7 +340,9 @@ async def handle_figurine_cmd(bot: Bot, matcher: Matcher, event: GroupMessageEve
             elif seg.type == "text":
                 text_content = str(seg).strip()
                 words = re.split(r'\s+', text_content)
+
                 for word in words:
+
                     if word == "自己":
                         mention_self_in_message = True
                     elif word.startswith("@") and word[1:].isdigit():
@@ -331,15 +350,18 @@ async def handle_figurine_cmd(bot: Bot, matcher: Matcher, event: GroupMessageEve
 
         # 2 如果第一阶段没有收集到任何图片，则尝试获取头像 ---
         if not all_images:
+
             if mention_self_in_message:
                 sender_id = event.sender.user_id
                 avatar = await _get_avatar_image(bot, sender_id, group_id)
+
                 if avatar:
                     all_images.append(avatar)
                 else:
                     logger.warning(f"Could not get avatar for '自己' ({sender_id})")
             for at_user_id in at_user_ids_from_message:
                 avatar = await _get_avatar_image(bot, at_user_id, group_id)
+
                 if avatar:
                     all_images.append(avatar)
                 else:
@@ -355,14 +377,38 @@ async def handle_figurine_cmd(bot: Bot, matcher: Matcher, event: GroupMessageEve
         image_result, _ = await call_openai_compatible_api(all_images, plugin_config.default_prompt)
 
         message_to_send = Message()
+
         if image_result:
-            message_to_send += MessageSegment.image(file=image_result)
-            message_to_send += f"\n{SUCCESS_MESSAGE}"
+
+            try:
+
+                if image_result.startswith("data:image/"):
+                    # 分割前缀和实际的 base64 数据
+                    _, base64_data = image_result.split(",", 1)
+                    decoded_image_bytes = base64.b64decode(base64_data)
+
+                    # 直接发送解码后的字节数据，适配NCQQ，
+                    # 这比发送完整的 data:image/base64 字符串更稳定。
+                    message_to_send += MessageSegment.image(file=decoded_image_bytes)
+                    message_to_send += f"\n{SUCCESS_MESSAGE}"
+                else:
+                    # 意外格式的备用方案（例如，如果 API 返回的是直接的 URL）
+                    logger.warning(f"意外的 image_result 格式: {image_result[:100]}... 尝试作为 URL 发送。")
+                    message_to_send += MessageSegment.image(url=image_result)
+                    message_to_send += f"\n{SUCCESS_MESSAGE}"
+
+            except Exception as e:
+                # 获图片数据处理（如 base64 解码）时的错误
+                logger.error(f"处理图片数据时发生错误: {e}", exc_info=True)
+                await matcher.finish(f"手办化处理完成，但图片数据处理失败 (内部处理错误): {e}")
+
+            # 如果图片数据处理成功，则尝试发送消息并结束匹配器
             await matcher.finish(message_to_send)
         else:
+            # 如果没有生成图片，则发送提示消息并结束匹配器
             await matcher.finish(NO_IMAGE_GENERATED_MESSAGE)
 
-    except MatcherException:
+    except FinishedException:
         return
     except ValueError as e:
         await matcher.finish(f"配置错误: {e}")

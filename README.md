@@ -76,7 +76,7 @@ _✨ NoneBot2 一个图片手办化插件 ✨_
 | FIGURINE__GEMINI_API_URL | 是 | https://generativelanguage.googleapis.com | Gemini API Url 默认为官方Url |
 | FIGURINE__GEMINI_API_KEYS | 是 | ["xxxxxx"] | 需要付费key，填入你的多个API Key，例如 ['key1', 'key2', 'key3'] |
 | FIGURINE__GEMINI_MODEL | 否 | gemini-2.5-flash-image-preview | Gemini 模型 默认为 gemini-2.5-flash-image-preview |
-| FIGURINE__MAX_API_KEY_ATTEMPTS | 否 | 3 | 每个API Key的最大尝试次数（包括首次尝试），默认3次，可能加剧Key消耗 |
+| FIGURINE__MAX_TOTAL_ATTEMPTS | 否 | 3 | 这一张图的最大尝试次数（包括首次尝试），默认3次，建议不小于Key数量，保证每个Key至少轮到1次 |
 | FIGURINE_DEFAULT_PROMPT | 否 | 省略 | 可参考下方 |
 
 ### 可参考提示词（PROMPT）：

@@ -40,7 +40,12 @@ _current_api_key_idx: int = 0
 @get_driver().on_startup
 async def _():
     # 更新启动日志信息
-    logger.info(f"Gemini API URL: {plugin_config.gemini_api_url}, Gemini MODEL: {plugin_config.gemini_model}.\nLoaded {len(plugin_config.gemini_api_keys)} API Keys, Max attempts per key: {plugin_config.max_api_key_attempts}.")
+    logger.info(
+        f"Gemini API URL: {plugin_config.gemini_api_url}, "
+        f"Gemini MODEL: {plugin_config.gemini_model}.\n"
+        f"Loaded {len(plugin_config.gemini_api_keys)} API Keys, "
+        f"Max total attempts per image: {plugin_config.max_total_attempts}."
+    )
 
 # 结束匹配器并发送消息
 async def fi(matcher: Matcher, message: str) -> None:
@@ -137,32 +142,29 @@ async def _get_avatar_image(bot: Bot, user_id: int, group_id: Optional[int] = No
         logger.error(f"Unexpected error getting avatar for user {user_id}: {e}", exc_info=True)
     return None
 
-# 调用 Gemini API
 async def call_openai_compatible_api(images: List[Image.Image], prompt: str = None) -> Tuple[Optional[str], Optional[str]]:
     global _current_api_key_idx
 
-    # 检查API Key配置
-    num_keys = len(plugin_config.gemini_api_keys)
-    if num_keys == 0 or (num_keys == 1 and plugin_config.gemini_api_keys[0] == 'xxxxxx'):
+    # 校验 Keys
+    keys = plugin_config.gemini_api_keys
+    num_keys = len(keys)
+    if num_keys == 0 or (num_keys == 1 and keys[0] == "xxxxxx"):
         raise ValueError("API Keys 未配置或配置错误")
 
     if not prompt:
         prompt = plugin_config.default_prompt
 
-    # 构建API请求的固定部分
     url = f"{plugin_config.gemini_api_url}/v1/chat/completions"
 
-    # 准备消息内容
+    # 构造请求 payload
     content = [{"type": "text", "text": prompt}]
     for img in images:
-        buffered = BytesIO()
-        img.save(buffered, format="PNG")
-        img_str = base64.b64encode(buffered.getvalue()).decode()
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        img_b64 = base64.b64encode(buf.getvalue()).decode()
         content.append({
             "type": "image_url",
-            "image_url": {
-                "url": f"data:image/png;base64,{img_str}"
-            }
+            "image_url": {"url": f"data:image/png;base64,{img_b64}"}
         })
 
     payload = {
@@ -171,97 +173,116 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
         "max_tokens": 1000,
     }
 
-    last_error = "所有API Key尝试失败"
+    max_total_attempts = plugin_config.max_total_attempts
+    total_attempts = 0
+    last_error = "尚未尝试"
 
-    # 从配置中获取每个Key的最大尝试次数
-    max_attempts_per_key = plugin_config.max_api_key_attempts
-
-    # 循环尝试所有Key，从当前索引开始
-    for _ in range(num_keys):
-        # 获取当前要使用的Key及其原始索引
-        current_key_original_idx = _current_api_key_idx
-        current_key = plugin_config.gemini_api_keys[current_key_original_idx]
-
-        logger.info(f"尝试使用 API Key (原始序号: {current_key_original_idx + 1}/{num_keys})")
-
+    while total_attempts < max_total_attempts:
+        current_key_idx = _current_api_key_idx % num_keys
+        key = keys[current_key_idx]
+        total_attempts += 1
         headers = {
-            "Authorization": f"Bearer {current_key}",
+            "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         }
+        logger.info(f"第 {total_attempts}/{max_total_attempts} 次尝试，使用 Key #{current_key_idx+1}/{num_keys}")
 
-        for attempt in range(max_attempts_per_key):
-            if attempt > 0:
-                await asyncio.sleep(2 * attempt) # 指数退避
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(url, headers=headers, json=payload)
+        except httpx.RequestError as e:
+            last_error = f"网络错误: {e}"
+            logger.warning(f"网络异常 (Key #{current_key_idx+1}, 尝试 {total_attempts}): {last_error}")
+            # 切下一个 Key，退避后继续
+            _current_api_key_idx = (current_key_idx + 1) % num_keys
+            await asyncio.sleep(1)
+            continue
 
-            try:
-                async with httpx.AsyncClient(timeout=60) as client:
-                    response = await client.post(url, headers=headers, json=payload)
+        # HTTP 非 2xx
+        if not resp.is_success:
+            last_error = f"HTTP {resp.status_code}: {resp.text}"
+            logger.warning(f"API Key #{current_key_idx+1} 调用失败 (尝试 {total_attempts}): {last_error}")
+            _current_api_key_idx = (current_key_idx + 1) % num_keys
+            await asyncio.sleep(1)
+            continue
 
-                    if not response.is_success:
-                        error_detail = f"HTTP {response.status_code}, 响应: {response.text}"
-                        last_error = f"API请求失败: {error_detail}"
-                        logger.warning(f"API Key (原始序号: {current_key_original_idx + 1}) (尝试 {attempt + 1}/{max_attempts_per_key}) 失败: {last_error}")
-                        continue # 尝试当前Key的下一次重试
+        # 保护性 JSON 解析
+        try:
+            result = resp.json()
+        except Exception as e:
+            last_error = f"JSON 解析失败: {e}"
+            logger.warning(f"Key #{current_key_idx+1} 返回非 JSON 文本 (尝试 {total_attempts})：{resp.text[:200]}")
+            _current_api_key_idx = (current_key_idx + 1) % num_keys
+            await asyncio.sleep(1)
+            continue
 
-                    result = response.json()
+        # 确保拿到的是 dict
+        if not isinstance(result, dict):
+            last_error = f"返回类型非 dict: {type(result)}"
+            logger.warning(f"Key #{current_key_idx+1} 返回数据结构异常 (尝试 {total_attempts})：{result}")
+            _current_api_key_idx = (current_key_idx + 1) % num_keys
+            await asyncio.sleep(1)
+            continue
 
-                    image_output = None
-                    text_output = None
+        # 兼容 error 字段（用 get 避免 KeyError）
+        err = result.get("error")
+        if err:
+            # err 可能是 dict，也可能是 str
+            if isinstance(err, dict):
+                error_msg = err.get("message", "未知错误")
+            else:
+                error_msg = str(err)
+            last_error = f"API 返回 error: {error_msg}"
+            logger.warning(f"API Key #{current_key_idx+1} 返回错误 (尝试 {total_attempts}): {last_error}")
+            _current_api_key_idx = (current_key_idx + 1) % num_keys
+            await asyncio.sleep(1)
+            continue
 
-                    if 'choices' in result and result['choices']:
-                        choice = result['choices'][0]
-                        message = choice.get('message', {})
+        # 继续走原有的 choices 解析
+        text_out = None
+        img_out = None
+        choices = result.get("choices")
+        if isinstance(choices, list) and choices:
+            msg = choices[0].get("message", {}) or {}
+            cont = msg.get("content")
+            if isinstance(cont, str):
+                text_out = cont.strip()
+            elif isinstance(cont, list):
+                parts = []
+                for part in cont:
+                    if part.get("type") == "text":
+                        parts.append(part.get("text", ""))
+                    elif part.get("type") == "image_url":
+                        img_out = part.get("image_url", {}).get("url")
+                        if img_out:
+                            break
+                if parts:
+                    text_out = "\n".join(parts).strip()
+            # 兼容老接口可能把图片放在 message["images"]
+            if not img_out and isinstance(msg.get("images"), list):
+                for it in msg["images"]:
+                    if isinstance(it, dict) and "image_url" in it:
+                        img_out = it["image_url"].get("url")
+                        if img_out:
+                            break
 
-                        if 'content' in message:
-                            content_data = message['content']
-                            if isinstance(content_data, str):
-                                text_output = content_data.strip()
-                            elif isinstance(content_data, list):
-                                text_parts = []
-                                for part in content_data:
-                                    if part.get('type') == 'text' and 'text' in part:
-                                        text_parts.append(part['text'])
-                                if text_parts:
-                                    text_output = '\n'.join(text_parts).strip()
+        # 判断是否拿到图片
+        if img_out:
+            _current_api_key_idx = (current_key_idx + 1) % num_keys
+            logger.info(f"成功拿到图片 (Key #{current_key_idx+1}, 尝试 {total_attempts})。下次从 Key #{_current_api_key_idx+1} 开始。")
+            return img_out, text_out
+        else:
+            last_error = last_error or "API 调用成功但未返回图片"
+            logger.warning(f"尝试 {total_attempts} 未拿到图片 (Key #{current_key_idx+1}): {last_error}")
 
-                        if 'images' in message and isinstance(message['images'], list) and len(message['images']) > 0:
-                            for img_item in message['images']:
-                                if isinstance(img_item, dict) and 'image_url' in img_item:
-                                    image_output = img_item['image_url']['url']
-                                    break
+        # 本次尝试失败，切换 Key 并退避
+        _current_api_key_idx = (current_key_idx + 1) % num_keys
+        await asyncio.sleep(1)
 
-                    if 'error' in result:
-                        error_msg = result['error'].get('message', '未知API错误')
-                        last_error = f"API返回错误信息: {error_msg}"
-                        logger.warning(f"API Key (原始序号: {current_key_original_idx + 1}) (尝试 {attempt + 1}/{max_attempts_per_key}) 失败: {last_error}")
-                        continue
-
-                    # 如果成功获取到图片或文本，则返回
-                    if image_output or text_output:
-                        logger.info(f"API Key (原始序号: {current_key_original_idx + 1}) 成功 (尝试 {attempt + 1}/{max_attempts_per_key})。下次将从 Key {((_current_api_key_idx + 1) % num_keys) + 1} 开始尝试。")
-                        _current_api_key_idx = (current_key_original_idx + 1) % num_keys # 成功后更新索引
-                        return image_output, text_output
-
-                    last_error = "API调用成功但未返回图片或文本内容"
-                    logger.warning(f"API Key (原始序号: {current_key_original_idx + 1}) (尝试 {attempt + 1}/{max_attempts_per_key}) 失败: {last_error}")
-                    continue
-
-            except httpx.RequestError as e:
-                last_error = f"网络请求失败: {e}"
-                logger.warning(f"API Key (原始序号: {current_key_original_idx + 1}) (尝试 {attempt + 1}/{max_attempts_per_key}) 网络错误: {last_error}")
-            except Exception as e:
-                last_error = f"处理响应时发生错误: {e}"
-                logger.warning(f"API Key (原始序号: {current_key_original_idx + 1}) (尝试 {attempt + 1}/{max_attempts_per_key}) 异常: {last_error}")
-
-        # 如果当前Key的所有尝试都失败了，则更新索引，继续下一个Key
-        logger.error(f"API Key (原始序号: {current_key_original_idx + 1}, Key: {current_key[:5]}...) 所有 {max_attempts_per_key} 次尝试均失败。切换到下一个Key...")
-        _current_api_key_idx = (current_key_original_idx + 1) % num_keys # 失败后更新索引
-
-    # 如果所有Key的所有尝试都失败了
-    raise Exception(f"所有API Key尝试失败，请检查配置或稍后再试。最后错误: {last_error}")
+    # 用尽所有尝试次数仍未成功
+    raise RuntimeError(f"已达最大调用次数 {max_total_attempts}，仍未成功获取图片。最后错误：{last_error}")
 
 
-# 命令处理器
 figurine_cmd = on_command(
     '手办化',
     aliases={'figurine', 'makefigurine'},
@@ -300,7 +321,6 @@ async def handle_figurine_cmd(bot: Bot, matcher: Matcher, event: GroupMessageEve
                 at_user_ids_from_message.append(int(seg.data["qq"]))
             elif seg.type == "text":
                 text_content = str(seg).strip()
-                # 识别“自己”和@用户
                 words = re.split(r'\s+', text_content)
                 for word in words:
                     if word == "自己":
@@ -317,29 +337,23 @@ async def handle_figurine_cmd(bot: Bot, matcher: Matcher, event: GroupMessageEve
                     all_images.append(avatar)
                 else:
                     logger.warning(f"Could not get avatar for '自己' ({sender_id})")
-
-            # 遍历之前收集到的@用户ID，获取头像
             for at_user_id in at_user_ids_from_message:
                 avatar = await _get_avatar_image(bot, at_user_id, group_id)
                 if avatar:
                     all_images.append(avatar)
                 else:
-                    logger.warning(f"Could not get avatar for @{at_user_id} (from text/at segment)")
-
-        # 3. 使用默认prompt
-        final_prompt = plugin_config.default_prompt
+                    logger.warning(f"Could not get avatar for @{at_user_id}")
 
         if not all_images:
             await matcher.finish('请回复包含图片的消息，或发送图片，或@用户/提及自己以获取头像。')
 
         await matcher.send("正在手办化处理中...")
-
         await asyncio.sleep(randint(1, 3))
 
-        image_result, _ = await call_openai_compatible_api(all_images, final_prompt)
+        # 目前是直接使用 plugin_config.default_prompt
+        image_result, _ = await call_openai_compatible_api(all_images, plugin_config.default_prompt)
 
         message_to_send = Message()
-
         if image_result:
             message_to_send += MessageSegment.image(file=image_result)
             message_to_send += f"\n{SUCCESS_MESSAGE}"
@@ -348,12 +362,12 @@ async def handle_figurine_cmd(bot: Bot, matcher: Matcher, event: GroupMessageEve
             await matcher.finish(NO_IMAGE_GENERATED_MESSAGE)
 
     except MatcherException:
-        return  # 正常结束，不需要处理
+        return
     except ValueError as e:
-        await matcher.finish(f"配置错误: {str(e)}")
+        await matcher.finish(f"配置错误: {e}")
     except ActionFailed as e:
-        logger.error(f"手办化处理失败 (发送消息错误): retcode={e.retcode}, message={e.message}", exc_info=True)
+        logger.error("手办化处理失败", exc_info=True)
         await matcher.finish("手办化处理失败，请稍后再试 (发送消息错误)")
     except Exception as e:
-        logger.error(f"手办化处理失败: {e}", exc_info=True)
-        await matcher.finish(f"手办化处理失败，请稍后再试。错误信息: {e}")
+        logger.error("手办化处理失败", exc_info=True)
+        await matcher.finish(f"手办化处理失败，请稍后再试。错误：{e}")

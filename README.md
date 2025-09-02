@@ -77,18 +77,18 @@ _✨ NoneBot2 一个图片手办化插件 ✨_
 | FIGURINE__GEMINI_API_KEYS | 是 | ["xxxxxx"] | 需要付费key，填入你的多个API Key，例如 ['key1', 'key2', 'key3'] |
 | FIGURINE__GEMINI_MODEL | 否 | gemini-2.5-flash-image-preview | Gemini 模型 默认为 gemini-2.5-flash-image-preview |
 | FIGURINE__MAX_TOTAL_ATTEMPTS | 否 | 3 | 这一张图的最大尝试次数（包括首次尝试），默认3次，建议不小于Key数量，保证每个Key至少轮到1次 |
-| FIGURINE_DEFAULT_PROMPT | 否 | 省略 | 自定义预设，可参考下方的固定1-6预设 |
+| FIGURINE__PROMPT_0 | 否 | 默认和预设1一样 | 自定义预设，可参考下方的预设 |
 
 ### 可参考提示词（PROMPT）：
 
-- 手办化1 效果：生成带包装盒、电脑桌背景的写实手办。
-- 手办化2 效果：生成带包装盒、电脑桌背景的写实手办（不同风格）。
-- 手办化3 效果：生成带包装盒的写实手办，更注重面部还原。
-- 手办化4 效果：与 变手办1 类似，但细节和风格有差异。
-- 手办化5 效果：基于游戏截图风格，微距摄影效果，带木质电脑桌背景。
-- 手办化6 效果：生成可爱的Q版/粘土人风格手办。
-- 手办化ntr 效果：生存一张餐厅构图
-- 手办化cos 效果：生存一张房间构图
+- 手办化1 :生成带包装盒、电脑桌背景的写实手办。
+- 手办化2 :生成带包装盒、电脑桌背景的写实手办（风格更加固定）。
+- 手办化3 :生成带包装盒的写实手办，更注重面部还原。
+- 手办化4 :与 变手办1 类似，细节更加丰富，风格略有差异。
+- 手办化5 :基于游戏截图风格，微距摄影效果，带木质电脑桌背景。
+- 手办化6 :生成可爱的Q版/粘土人风格手办。
+- 手办化ntr :生成一张快餐店构图，手机上展示着上传的图片，背景中一对情侣坐在一起接吻。
+- 手办化cos :生成一张主题房间构图，房间中有Cosplayer、抱枕、PVC人物等。
 
 <details>
 <summary>默认预设1 Using the nano-banana model, a commercial 1/7 scale figurine of the character in the picture was created, depicting a realistic style and a realistic environment.</summary>

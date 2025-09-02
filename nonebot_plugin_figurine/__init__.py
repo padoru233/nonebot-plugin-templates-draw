@@ -19,14 +19,15 @@ from .config import Config
 usage = """
     @我+手办化查看详细指令
     使用 '手办化 <关键词>' 来选择特定预设
-- 手办化1 效果：生成带包装盒、电脑桌背景的写实手办。
-- 手办化2 效果：生成带包装盒、电脑桌背景的写实手办（风格更加固定）。
-- 手办化3 效果：生成带包装盒的写实手办，更注重面部还原。
-- 手办化4 效果：与 变手办1 类似，细节更加丰富，风格略有差异。
-- 手办化5 效果：基于游戏截图风格，微距摄影效果，带木质电脑桌背景。
-- 手办化6 效果：生成可爱的Q版/粘土人风格手办。
-- 手办化ntr 效果：生成一张快餐店构图，手机上展示着上传的图片，背景中一对情侣坐在一起接吻。
-- 手办化cos 效果：生成一张主题房间构图，房间中有Cosplayer、抱枕、PVC人物等。
+- 手办化0 :自定义预设，不带参数触发。
+- 手办化1 :生成带包装盒、电脑桌背景的写实手办。
+- 手办化2 :生成带包装盒、电脑桌背景的写实手办（风格更加固定）。
+- 手办化3 :生成带包装盒的写实手办，更注重面部还原。
+- 手办化4 :与 变手办1 类似，细节更加丰富，风格略有差异。
+- 手办化5 :基于游戏截图风格，微距摄影效果，带木质电脑桌背景。
+- 手办化6 :生成可爱的Q版/粘土人风格手办。
+- 手办化ntr :生成一张快餐店构图，手机上展示着上传的图片，背景中一对情侣坐在一起接吻。
+- 手办化cos :生成一张主题房间构图，房间中有Cosplayer、抱枕、PVC人物等。
 """
 
 # 插件元数据
@@ -151,8 +152,11 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
     if num_keys == 0 or (num_keys == 1 and keys[0] == "xxxxxx"):
         raise ValueError("API Keys 未配置或配置错误")
 
+    # 如果传入的 prompt 为空，则使用配置中的 prompt_0
+    # 注意：这里的 prompt 参数是由 handle_figurine_cmd 传入的 selected_prompt
+    # selected_prompt 已经包含了 fallback 逻辑，所以这里直接使用即可
     if not prompt:
-        prompt = plugin_config.default_prompt
+        prompt = plugin_config.prompt_0
 
     url = f"{plugin_config.gemini_api_url}/v1/chat/completions"
 
@@ -371,20 +375,21 @@ async def handle_figurine_cmd(bot: Bot,
             await matcher.finish(
                 "💡 请回复包含图片的消息，或发送图片，或@用户/提及自己以获取头像。\n"
                 "使用 '手办化 <关键词>' 来选择特定预设：\n"
-                "- 手办化1 效果：生成带包装盒、电脑桌背景的写实手办。\n"
-                "- 手办化2 效果：生成带包装盒、电脑桌背景的写实手办（风格更加固定）。\n"
-                "- 手办化3 效果：生成带包装盒的写实手办，更注重面部还原。\n"
-                "- 手办化4 效果：与 手办化1 类似，细节更加丰富，风格略有差异。\n"
-                "- 手办化5 效果：基于游戏截图风格，微距摄影效果，带木质电脑桌背景。\n"
-                "- 手办化6 效果：生成可爱的Q版/粘土人风格手办。\n"
-                "- 手办化ntr 效果：生成一张快餐店构图，手机上展示着上传的图片，背景中一对情侣坐在一起接吻。\n"
-                "- 手办化cos 效果：生成一张主题房间构图，房间中有Cosplayer、抱枕、PVC人物等。"
+                "- 手办化0 :自定义预设，不带参数触发。\n"
+                "- 手办化1 :生成带包装盒、电脑桌背景的写实手办。\n"
+                "- 手办化2 :生成带包装盒、电脑桌背景的写实手办（风格更加固定）。\n"
+                "- 手办化3 :生成带包装盒的写实手办，更注重面部还原。\n"
+                "- 手办化4 :与 手办化1 类似，细节更加丰富，风格略有差异。\n"
+                "- 手办化5 :基于游戏截图风格，微距摄影效果，带木质电脑桌背景。\n"
+                "- 手办化6 :生成可爱的Q版/粘土人风格手办。\n"
+                "- 手办化ntr :生成一张快餐店构图，手机上展示着上传的图片，背景中一对情侣坐在一起接吻。\n"
+                "- 手办化cos :生成一张主题房间构图，房间中有Cosplayer、抱枕、PVC人物等。"
             )
 
         # 解析命令参数并选择 Prompt
         prompt_identifier = ""
         # 定义所有有效的手办化预设关键词
-        valid_style_keywords = {"1", "2", "3", "4", "5", "6", "ntr", "cos", "test"}
+        valid_style_keywords = {"0", "1", "2", "3", "4", "5", "6", "ntr", "cos", "test"}
 
         # 从 CommandArg 中提取的词语中查找第一个匹配的预设关键词
         for word in words_in_args:
@@ -392,36 +397,43 @@ async def handle_figurine_cmd(bot: Bot,
                 prompt_identifier = word
                 break
 
-        # 默认使用 default_prompt
-        selected_prompt = plugin_config.default_prompt
-
-        # 根据是否找到有效的预设关键词来决定后续行为
-        if prompt_identifier:
-            target_attr_name = f"prompt_{prompt_identifier}"
-            potential_prompt = getattr(plugin_config, target_attr_name, None)
-
-            if potential_prompt is not None and isinstance(potential_prompt, str):
-                selected_prompt = potential_prompt
-                logger.info(f"使用自定义 prompt: {target_attr_name}")
-            else:
-                # 如果 valid_style_keywords 和配置同步，这里不应该触发
-                logger.warning(f"配置中未找到 '{prompt_identifier}' 预设的提示词，将使用默认 prompt。")
-                await matcher.send(f"⚠️ 配置中未找到 '{prompt_identifier}' 预设的提示词，将使用默认预设。可用的预设有：有：1, 2, 3, 4, 5, 6, ntr, cos。")
-        else:
-            # 如果 CommandArg 中没有找到任何有效的预设关键词
-            logger.info("未指定手办化预设关键词，将使用默认 prompt。")
+        # 如果 CommandArg 中没有找到任何有效的预设关键词，则默认使用 "0"
+        if not prompt_identifier:
+            prompt_identifier = "0" # 强制设置为 "0"
+            logger.info("未指定手办化预设关键词，将默认使用自定义预设。")
             await matcher.send(
-                "⚠️ 未指定手办化预设，将使用默认预设。\n"
+                "⚠️ 未指定手办化预设，将使用自定义预设。\n"
                 "使用 '手办化 <关键词>' 来选择特定预设：\n"
-                "- 手办化1 效果：生成带包装盒、电脑桌背景的写实手办。\n"
-                "- 手办化2 效果：生成带包装盒、电脑桌背景的写实手办（风格更加固定）。\n"
-                "- 手办化3 效果：生成带包装盒的写实手办，更注重面部还原。\n"
-                "- 手办化4 效果：与 手办化1 类似，细节更加丰富，风格略有差异。\n"
-                "- 手办化5 效果：基于游戏截图风格，微距摄影效果，带木质电脑桌背景。\n"
-                "- 手办化6 效果：生成可爱的Q版/粘土人风格手办。\n"
-                "- 手办化ntr 效果：生成一张快餐店构图，手机上展示着上传的图片，背景中一对情侣坐在一起接吻。\n"
-                "- 手办化cos 效果：生成一张主题房间构图，房间中有Cosplayer、抱枕、PVC人物等。"
+                "- 手办化0 :自定义预设，不带参数触发。\n"
+                "- 手办化1 :生成带包装盒、电脑桌背景的写实手办。\n"
+                "- 手办化2 :生成带包装盒、电脑桌背景的写实手办（风格更加固定）。\n"
+                "- 手办化3 :生成带包装盒的写实手办，更注重面部还原。\n"
+                "- 手办化4 :与 手办化1 类似，细节更加丰富，风格略有差异。\n"
+                "- 手办化5 :基于游戏截图风格，微距摄影效果，带木质电脑桌背景。\n"
+                "- 手办化6 :生成可爱的Q版/粘土人风格手办。\n"
+                "- 手办化ntr :生成一张快餐店构图，手机上展示着上传的图片，背景中一对情侣坐在一起接吻。\n"
+                "- 手办化cos :生成一张主题房间构图，房间中有Cosplayer、抱枕、PVC人物等。"
             )
+
+        target_attr_name = f"prompt_{prompt_identifier}"
+        potential_prompt = getattr(plugin_config, target_attr_name, None)
+
+        selected_prompt = "" # 初始化 selected_prompt
+
+        if potential_prompt is not None and isinstance(potential_prompt, str) and potential_prompt != "":
+            selected_prompt = potential_prompt
+            logger.info(f"使用 prompt: {target_attr_name}")
+        else:
+            # 如果指定的 prompt 为空或未找到，则回退到 prompt_0
+            selected_prompt = plugin_config.prompt_0
+            logger.warning(f"配置中 '{target_attr_name}' 预设的提示词为空或未找到，将回退使用 prompt_0。")
+            await matcher.send(f"⚠️ '{target_attr_name}' 预设的提示词为空或未找到，将回退使用默认预设。")
+
+        # 最终检查，确保 selected_prompt 不为空
+        if not selected_prompt:
+            selected_prompt = "Generate a figurine based on the input image." # 极端情况下的通用回退
+            logger.warning("所有提示词均为空，使用通用 fallback 提示词。")
+
 
         await matcher.send("⏳ 正在进行手办化处理，请稍候...")
 

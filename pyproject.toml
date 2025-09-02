@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nonebot-plugin-figurine"
-version = "0.2.0"
+version = "0.2.0.post1"
 description = "NoneBot2 一个图片手办化插件"
 authors = ["padoru233 <wr15624916906@gmail.com>"]
 readme = "README.md"

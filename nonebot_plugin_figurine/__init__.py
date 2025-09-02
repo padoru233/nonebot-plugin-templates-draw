@@ -10,7 +10,7 @@ from nonebot.adapters.onebot.v11.exception import ActionFailed
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.matcher import Matcher
 from nonebot.exception import FinishedException
-from nonebot.params import Depends
+from nonebot.params import Depends, CommandArg
 from nonebot.plugin import PluginMetadata
 from PIL import Image
 from .config import Config
@@ -18,6 +18,15 @@ from .config import Config
 
 usage = """
     @我+手办化查看详细指令
+    使用 '手办化 <关键词>' 来选择特定预设
+- 手办化1 效果：生成带包装盒、电脑桌背景的写实手办。
+- 手办化2 效果：生成带包装盒、电脑桌背景的写实手办（不同风格）。
+- 手办化3 效果：生成带包装盒的写实手办，更注重面部还原。
+- 手办化4 效果：与 变手办1 类似，但细节和风格有差异。
+- 手办化5 效果：基于游戏截图风格，微距摄影效果，带木质电脑桌背景。
+- 手办化6 效果：生成可爱的Q版/粘土人风格手办。
+- 手办化ntr 效果：生存一张餐厅构图
+- 手办化cos 效果：生存一张房间构图
 """
 
 # 插件元数据
@@ -53,16 +62,19 @@ async def fi(matcher: Matcher, message: str) -> None:
 
 # 记录日志并结束匹配器
 async def log_and_send(matcher: Matcher, title: str, details: str = "") -> None:
+
     full_message = f"{title}\n{details}" if details else title
     logger.info(f"{title}: {details}")
     await matcher.send(full_message)
 
 # 获取message
 async def msg_reply(event: GroupMessageEvent):
+
     return event.reply.message_id if event.reply else None
 
 # 获取 event 内所有的图片，返回 list
 async def get_images(event: GroupMessageEvent) -> List[Image.Image]:
+
     msg_images = event.message["image"]
     images: List[Image.Image] = []
 
@@ -103,30 +115,13 @@ async def get_images_from_reply(bot: Bot, reply_msg_id: int) -> List[Image.Image
 
 # 获取用户头像
 async def _get_avatar_image(bot: Bot, user_id: int, group_id: Optional[int] = None) -> Optional[Image.Image]:
+
     avatar_url = None
 
     try:
 
         # 构造常用的QQ头像URL。s=0表示原始大小。
         avatar_url = f"https://q1.qlogo.cn/g?b=qq&s=0&nk={user_id}"
-
-        # 尝试获取用户信息，主要是为了确认用户存在，并记录日志
-        # (这部分可以省略，因为主要目的是获取头像，而不是用户信息本身)
-        """
-        if group_id:
-            try:
-                await bot.get_group_member_info(group_id=group_id, user_id=user_id, no_cache=True)
-                logger.debug(f"Fetched group member info for {user_id} in {group_id}, using constructed avatar URL: {avatar_url}")
-            except ActionFailed as e:
-                logger.debug(f"Could not get group member info for {user_id} in {group_id}: {e.message}")
-                # Fallback to stranger info or just use constructed URL
-        else:
-            try:
-                await bot.get_stranger_info(user_id=user_id, no_cache=True)
-                logger.debug(f"Fetched stranger info for {user_id}, using constructed avatar URL: {avatar_url}")
-            except ActionFailed as e:
-                logger.debug(f"Could not get stranger info for {user_id}: {e.message}")
-        """
 
         if avatar_url:
             async with httpx.AsyncClient() as client:
@@ -146,6 +141,7 @@ async def _get_avatar_image(bot: Bot, user_id: int, group_id: Optional[int] = No
     return None
 
 async def call_openai_compatible_api(images: List[Image.Image], prompt: str = None) -> Tuple[Optional[str], Optional[str]]:
+
     global _current_api_key_idx
 
     # 校验 Keys
@@ -180,7 +176,7 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
 
     max_total_attempts = plugin_config.max_total_attempts
     total_attempts = 0
-    last_error = "尚未尝试"
+    last_error = "生成失败，未能生成图片，请稍后再试或尝试其他图片。"
 
     while total_attempts < max_total_attempts:
         current_key_idx = _current_api_key_idx % num_keys
@@ -306,32 +302,39 @@ figurine_cmd = on_command(
 )
 
 @figurine_cmd.handle()
-async def handle_figurine_cmd(bot: Bot, matcher: Matcher, event: GroupMessageEvent, rp = Depends(msg_reply)):
+async def handle_figurine_cmd(bot: Bot,
+    matcher: Matcher,
+    event: GroupMessageEvent,
+    args: Message = CommandArg(),
+    rp = Depends(msg_reply)
+):
 
-    SUCCESS_MESSAGE = "手办化完成！"
-    NO_IMAGE_GENERATED_MESSAGE = "手办化处理完成，但未能生成图片，请稍后再试或尝试其他图片。"
+    SUCCESS_MESSAGE = "✅️ 手办化完成！"
+    NO_IMAGE_GENERATED_MESSAGE = "❎ 手办化处理完成，但未能生成图片，请稍后再试或尝试其他图片。"
 
     try:
         all_images: List[Image.Image] = []
         group_id = event.group_id if isinstance(event, GroupMessageEvent) else None
 
-        # 1 获取回复消息中的图片
+        # 1. 获取回复消息中的图片
         if rp:
             all_images.extend(await get_images_from_reply(bot, rp))
 
-        # 这里只收集图片，不立即获取头像，临时存储@的用户ID和"自己"的提及，以便在没有其他图片时使用
+        # 2. 获取当前消息中的图片，并识别 @ 用户/提及自己
         at_user_ids_from_message: List[int] = []
         mention_self_in_message: bool = False
 
-        for seg in event.message:
+        # 提取 CommandArg 的纯文本内容，用于后续解析预设关键词
+        raw_command_args_text = args.extract_plain_text().strip().lower()
+        words_in_args = raw_command_args_text.split()
 
+        for seg in event.message:
             if seg.type == "image":
                 url = seg.data["url"]
                 async with httpx.AsyncClient() as client:
                     r = await client.get(url, follow_redirects=True)
 
                 if r.is_success:
-
                     all_images.append(Image.open(BytesIO(r.content)))
                 else:
                     logger.error(f"Cannot fetch image from {url} msg#{event.message_id}")
@@ -342,46 +345,93 @@ async def handle_figurine_cmd(bot: Bot, matcher: Matcher, event: GroupMessageEve
                 words = re.split(r'\s+', text_content)
 
                 for word in words:
-
-                    if word == "自己":
+                    if word.lower() == "自己":
                         mention_self_in_message = True
                     elif word.startswith("@") and word[1:].isdigit():
                         at_user_ids_from_message.append(int(word[1:]))
 
-        # 2 如果第一阶段没有收集到任何图片，则尝试获取头像 ---
+        # 3. 如果前两步没有收集到任何图片，则尝试获取头像
         if not all_images:
-
             if mention_self_in_message:
                 sender_id = event.sender.user_id
                 avatar = await _get_avatar_image(bot, sender_id, group_id)
-
                 if avatar:
                     all_images.append(avatar)
                 else:
                     logger.warning(f"Could not get avatar for '自己' ({sender_id})")
             for at_user_id in at_user_ids_from_message:
                 avatar = await _get_avatar_image(bot, at_user_id, group_id)
-
                 if avatar:
                     all_images.append(avatar)
                 else:
                     logger.warning(f"Could not get avatar for @{at_user_id}")
 
+        # 如果没有找到任何图片，则直接结束并发送“请回复图片”的提示
         if not all_images:
-            await matcher.finish('请回复包含图片的消息，或发送图片，或@用户/提及自己以获取头像。')
+            await matcher.finish(
+                "💡 请回复包含图片的消息，或发送图片，或@用户/提及自己以获取头像。\n"
+                "使用 '手办化 <关键词>' 来选择特定预设：\n"
+                "- 手办化1(默认) 效果：生成带包装盒、电脑桌背景的写实手办。\n"
+                "- 手办化2 效果：生成带包装盒、电脑桌背景的写实手办（不同风格）。\n"
+                "- 手办化3 效果：生成带包装盒的写实手办，更注重面部还原。\n"
+                "- 手办化4 效果：与 手办化1 类似，但细节和风格有差异。\n"
+                "- 手办化5 效果：基于游戏截图风格，微距摄影效果，带木质电脑桌背景。\n"
+                "- 手办化6 效果：生成可爱的Q版/粘土人风格手办。\n"
+                "- 手办化ntr 效果：生存一张餐厅构图。\n"
+                "- 手办化cos 效果：生存一张房间构图。"
+            )
 
-        await matcher.send("正在手办化处理中...")
-        await asyncio.sleep(randint(1, 3))
+        # 解析命令参数并选择 Prompt
+        prompt_identifier = ""
+        # 定义所有有效的手办化预设关键词
+        valid_style_keywords = {"1", "2", "3", "4", "5", "6", "ntr", "cos", "test"}
 
-        # 目前是直接使用 plugin_config.default_prompt
-        image_result, _ = await call_openai_compatible_api(all_images, plugin_config.default_prompt)
+        # 从 CommandArg 中提取的词语中查找第一个匹配的预设关键词
+        for word in words_in_args:
+            if word in valid_style_keywords:
+                prompt_identifier = word
+                break
+
+        # 默认使用 default_prompt
+        selected_prompt = plugin_config.default_prompt
+
+        # 根据是否找到有效的预设关键词来决定后续行为
+        if prompt_identifier:
+            target_attr_name = f"prompt_{prompt_identifier}"
+            potential_prompt = getattr(plugin_config, target_attr_name, None)
+
+            if potential_prompt is not None and isinstance(potential_prompt, str):
+                selected_prompt = potential_prompt
+                logger.info(f"使用自定义 prompt: {target_attr_name}")
+            else:
+                # 如果 valid_style_keywords 和配置同步，这里不应该触发
+                logger.warning(f"配置中未找到 '{prompt_identifier}' 预设的提示词，将使用默认 prompt。")
+                await matcher.send(f"⚠️ 配置中未找到 '{prompt_identifier}' 预设的提示词，将使用默认预设。可用的预设有：有：1, 2, 3, 4, 5, 6, ntr, cos。")
+        else:
+            # 如果 CommandArg 中没有找到任何有效的预设关键词
+            logger.info("未指定手办化预设关键词，将使用默认 prompt。")
+            await matcher.send(
+                "⚠️ 未指定手办化预设，将使用默认预设。\n"
+                "使用 '手办化 <关键词>' 来选择特定预设：\n"
+                "- 手办化1(默认) 效果：生成带包装盒、电脑桌背景的写实手办。\n"
+                "- 手办化2 效果：生成带包装盒、电脑桌背景的写实手办（不同风格）。\n"
+                "- 手办化3 效果：生成带包装盒的写实手办，更注重面部还原。\n"
+                "- 手办化4 效果：与 手办化1 类似，但细节和风格有差异。\n"
+                "- 手办化5 效果：基于游戏截图风格，微距摄影效果，带木质电脑桌背景。\n"
+                "- 手办化6 效果：生成可爱的Q版/粘土人风格手办。\n"
+                "- 手办化ntr 效果：生存一张餐厅构图。\n"
+                "- 手办化cos 效果：生存一张房间构图。"
+            )
+
+        await matcher.send("⏳ 正在进行手办化处理，请稍候...")
+
+        # 将选择的 prompt 传递给 API 调用函数
+        image_result, _ = await call_openai_compatible_api(all_images, selected_prompt)
 
         message_to_send = Message()
 
         if image_result:
-
             try:
-
                 if image_result.startswith("data:image/"):
                     # 分割前缀和实际的 base64 数据
                     _, base64_data = image_result.split(",", 1)
@@ -411,10 +461,10 @@ async def handle_figurine_cmd(bot: Bot, matcher: Matcher, event: GroupMessageEve
     except FinishedException:
         return
     except ValueError as e:
-        await matcher.finish(f"配置错误: {e}")
+        await matcher.finish(f"❎ 配置错误: {e}")
     except ActionFailed as e:
         logger.error("手办化处理失败", exc_info=True)
-        await matcher.finish("手办化处理失败，请稍后再试 (发送消息错误)")
+        await matcher.finish("❎ 手办化处理失败，请稍后再试 (发送消息错误)。")
     except Exception as e:
         logger.error("手办化处理失败", exc_info=True)
-        await matcher.finish(f"手办化处理失败，请稍后再试。错误：{e}")
+        await matcher.finish(f"❎ 手办化处理失败，请稍后再试。错误：{e}")

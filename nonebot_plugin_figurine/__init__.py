@@ -180,7 +180,7 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
 
     max_total_attempts = plugin_config.max_total_attempts
     total_attempts = 0
-    last_error = "生成失败，未能生成图片，请稍后再试或尝试其他图片。"
+    last_error = "未能生成图片。"
 
     while total_attempts < max_total_attempts:
         current_key_idx = _current_api_key_idx % num_keys
@@ -314,7 +314,7 @@ async def handle_figurine_cmd(bot: Bot,
 ):
 
     SUCCESS_MESSAGE = "✅️ 手办化完成！"
-    NO_IMAGE_GENERATED_MESSAGE = "❎ 手办化处理完成，但未能生成图片，请稍后再试或尝试其他图片。"
+    NO_IMAGE_GENERATED_MESSAGE = "❎ 未能生成图片，可能图片被判定违规。"
 
     try:
         all_images: List[Image.Image] = []
@@ -435,7 +435,7 @@ async def handle_figurine_cmd(bot: Bot,
             logger.warning("所有提示词均为空，使用通用 fallback 提示词。")
 
 
-        await matcher.send("⏳ 正在进行手办化处理，请稍候...")
+        await matcher.send("⏳ 正在生成图片中，请稍候...")
 
         # 将选择的 prompt 传递给 API 调用函数
         image_result, _ = await call_openai_compatible_api(all_images, selected_prompt)

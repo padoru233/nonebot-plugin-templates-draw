@@ -79,6 +79,16 @@ _✨ NoneBot2 一个图片手办化插件 ✨_
 | FIGURINE__MAX_TOTAL_ATTEMPTS | 否 | 3 | 这一张图的最大尝试次数（包括首次尝试），默认3次，建议不小于Key数量，保证每个Key至少轮到1次 |
 | FIGURINE__PROMPT_0 | 否 | 默认和预设1一样 | 自定义预设，可参考下方的预设 |
 
+### 推荐API
+
+https://openrouter.ai/ 充值10刀即可每天调用1000次免费模型  
+自建API：覆盖如下请求参数
+```
+{
+  "modalities": ["image", "text"]
+}
+```
+
 ### 可参考提示词（PROMPT）：
 
 - 手办化1 :生成带包装盒、电脑桌背景的写实手办。

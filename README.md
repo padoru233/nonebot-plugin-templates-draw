@@ -81,8 +81,10 @@ _✨ NoneBot2 一个图片手办化插件 ✨_
 
 ### 推荐API
 
-https://openrouter.ai/ 充值10刀即可每天调用1000次免费模型  
-自建API：覆盖如下请求参数
+https://openrouter.ai/ ~~充值10刀即可每天调用1000次免费模型~~
+  由于google改变了价格，不再有免费调用：https://ai.google.dev/gemini-api/docs/pricing?hl=zh-cn#gemini-2.5-flash-image-preview
+  大约次调用不到4毛CNY，建议配合 [插件管理系统](https://github.com/HibiKier/nonebot-plugin-zxpm) 等设置阻塞、CD、次数等
+  自建API：覆盖如下请求参数
 ```
 {
   "modalities": ["image", "text"]

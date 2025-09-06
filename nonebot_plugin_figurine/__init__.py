@@ -180,7 +180,7 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
 
     max_total_attempts = plugin_config.max_total_attempts
     total_attempts = 0
-    last_error = "未能生成图片。"
+    last_error = "未能生成图片，可能图片被判定违规。"
 
     while total_attempts < max_total_attempts:
         current_key_idx = _current_api_key_idx % num_keys

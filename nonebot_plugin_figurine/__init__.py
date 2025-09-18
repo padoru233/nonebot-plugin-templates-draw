@@ -122,7 +122,7 @@ async def _get_avatar_image(bot: Bot, user_id: int, group_id: Optional[int] = No
     try:
 
         # 构造常用的QQ头像URL。s=0表示原始大小。
-        avatar_url = f"https://q1.qlogo.cn/g?b=qq&s=0&nk={user_id}"
+        avatar_url = f"https://q1.qlogo.cn/g?b=qq&s=0&nk={user_id}&s=640"
 
         if avatar_url:
             async with httpx.AsyncClient() as client:

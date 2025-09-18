@@ -28,6 +28,7 @@ usage = """
 - 手办化6 :生成可爱的Q版/粘土人风格手办。
 - 手办化ntr :生成一张快餐店构图，手机上展示着上传的图片，背景中一对情侣坐在一起接吻。
 - 手办化cos :生成一张主题房间构图，房间中有Cosplayer、抱枕、PVC人物等。
+- 手办化jio :生成一张人物将脚伸出，夸大展示脚部的透视图。
 """
 
 # 插件元数据
@@ -180,7 +181,7 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
 
     max_total_attempts = plugin_config.max_total_attempts
     total_attempts = 0
-    last_error = "未能生成图片，可能图片被判定违规。"
+    last_error = "❎ 未能生成图片，可能图片被判定违规。"
 
     while total_attempts < max_total_attempts:
         current_key_idx = _current_api_key_idx % num_keys
@@ -383,13 +384,14 @@ async def handle_figurine_cmd(bot: Bot,
                 "- 手办化5 :基于游戏截图风格，微距摄影效果，带木质电脑桌背景。\n"
                 "- 手办化6 :生成可爱的Q版/粘土人风格手办。\n"
                 "- 手办化ntr :生成一张快餐店构图，手机上展示着上传的图片，背景中一对情侣坐在一起接吻。\n"
-                "- 手办化cos :生成一张主题房间构图，房间中有Cosplayer、抱枕、PVC人物等。"
+                "- 手办化cos :生成一张主题房间构图，房间中有Cosplayer、抱枕、PVC人物等。\n"
+                "- 手办化jio :生成一张人物将脚伸出，夸大展示脚部的透视图。"
             )
 
         # 解析命令参数并选择 Prompt
         prompt_identifier = ""
         # 定义所有有效的手办化预设关键词
-        valid_style_keywords = {"0", "1", "2", "3", "4", "5", "6", "ntr", "cos", "test"}
+        valid_style_keywords = {"0", "1", "2", "3", "4", "5", "6", "ntr", "cos", "jio", "test"}
 
         # 从 CommandArg 中提取的词语中查找第一个匹配的预设关键词
         for word in words_in_args:
@@ -412,7 +414,8 @@ async def handle_figurine_cmd(bot: Bot,
                 "- 手办化5 :基于游戏截图风格，微距摄影效果，带木质电脑桌背景。\n"
                 "- 手办化6 :生成可爱的Q版/粘土人风格手办。\n"
                 "- 手办化ntr :生成一张快餐店构图，手机上展示着上传的图片，背景中一对情侣坐在一起接吻。\n"
-                "- 手办化cos :生成一张主题房间构图，房间中有Cosplayer、抱枕、PVC人物等。"
+                "- 手办化cos :生成一张主题房间构图，房间中有Cosplayer、抱枕、PVC人物等。\n"
+                "- 手办化jio :生成一张人物将脚伸出，夸大展示脚部的透视图。"
             )
 
         target_attr_name = f"prompt_{prompt_identifier}"

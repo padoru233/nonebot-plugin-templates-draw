@@ -270,16 +270,6 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
                             break
                 if parts:
                     text_out = "\n".join(parts).strip()
-            # 兼容老接口可能把图片放在 message["images"]
-            if not img_out and isinstance(msg.get("images"), list):
-
-                for it in msg["images"]:
-
-                    if isinstance(it, dict) and "image_url" in it:
-                        img_out = it["image_url"].get("url")
-
-                        if img_out:
-                            break
 
         # 判断是否拿到图片
         if img_out:

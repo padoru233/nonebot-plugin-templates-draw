@@ -176,7 +176,6 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
     payload = {
         "model": plugin_config.gemini_model,
         "messages": [{"role": "user", "content": content}],
-        "max_tokens": 2000,
     }
 
     max_total_attempts = plugin_config.max_total_attempts

@@ -161,17 +161,24 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
 
     url = f"{plugin_config.gemini_api_url}/v1/chat/completions"
 
-    # 构造请求 payload
-    content_parts = [{"type": "text", "text": prompt}]
-
     for img in images:
         buf = BytesIO()
         img.save(buf, format="PNG")
         img_b64 = base64.b64encode(buf.getvalue()).decode()
-        content_parts.append({
+
+    # 构造请求 payload
+    content_parts = [
+        {
+            "type": "text",
+            "text": prompt
+        },
+        {
             "type": "image_url",
-            "image_url": {"url": f"data:image/png;base64,{img_b64}"}
-        })
+            "image_url": {
+                "url": f"data:image/png;base64,{img_b64}"
+            }
+        }
+    ]
 
     payload = {
         "model": plugin_config.gemini_model,

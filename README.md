@@ -87,7 +87,7 @@ _✨ NoneBot2 一个图片手办化插件 ✨_
 - 自建API：覆盖如下请求参数
 ```
 {
-  "modalities": ["image", "text"]
+  "modalities": ["text", "image"]
 }
 ```
 

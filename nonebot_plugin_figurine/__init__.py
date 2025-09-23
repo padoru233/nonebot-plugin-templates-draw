@@ -161,10 +161,12 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
 
     url = f"{plugin_config.gemini_api_url}/v1/chat/completions"
 
-    for img in images:
-        buf = BytesIO()
-        img.save(buf, format="PNG")
-        img_b64 = base64.b64encode(buf.getvalue()).decode()
+    if not images:
+        raise ValueError("没有传入任何图片")
+
+    buf = BytesIO()
+    images[0].save(buf, format="PNG")
+    img_b64 = base64.b64encode(buf.getvalue()).decode()
 
     # 构造请求 payload
     content_parts = [

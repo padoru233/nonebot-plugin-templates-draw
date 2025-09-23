@@ -193,7 +193,7 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
         total_attempts += 1
         headers = {
             "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
+            "Content-Type": "application/json"
         }
         logger.info(f"第 {total_attempts}/{max_total_attempts} 次尝试，使用 Key #{current_key_idx+1}/{num_keys}")
 

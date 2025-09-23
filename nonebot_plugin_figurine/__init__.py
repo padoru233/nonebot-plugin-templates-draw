@@ -162,20 +162,25 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
     url = f"{plugin_config.gemini_api_url}/v1/chat/completions"
 
     # 构造请求 payload
-    content = [{"type": "text", "text": prompt}]
+    content_parts = [{"type": "text", "text": prompt}]
 
     for img in images:
         buf = BytesIO()
         img.save(buf, format="PNG")
         img_b64 = base64.b64encode(buf.getvalue()).decode()
-        content.append({
+        content_parts.append({
             "type": "image_url",
             "image_url": {"url": f"data:image/png;base64,{img_b64}"}
         })
 
     payload = {
         "model": plugin_config.gemini_model,
-        "messages": [{"role": "user", "content": content}],
+        "messages": [
+            {
+                "role": "user",
+                "content": content_parts
+            }
+        ]
     }
 
     max_total_attempts = plugin_config.max_total_attempts
@@ -245,31 +250,31 @@ async def call_openai_compatible_api(images: List[Image.Image], prompt: str = No
             await asyncio.sleep(1)
             continue
 
-        # 继续走原有的 choices 解析
         text_out = None
         img_out = None
         choices = result.get("choices")
 
         if isinstance(choices, list) and choices:
             msg = choices[0].get("message", {}) or {}
-            cont = msg.get("content")
 
-            if isinstance(cont, str):
-                text_out = cont.strip()
-            elif isinstance(cont, list):
-                parts = []
+            # 返回的图片在 message.images[0].image_url.url
+            # 文本在 message.content
 
-                for part in cont:
+            # 获取文本内容
+            text_out = msg.get("content")
+            if isinstance(text_out, str):
+                text_out = text_out.strip()
+            else:
+                text_out = None
 
-                    if part.get("type") == "text":
-                        parts.append(part.get("text", ""))
-                    elif part.get("type") == "image_url":
-                        img_out = part.get("image_url", {}).get("url")
-
-                        if img_out:
-                            break
-                if parts:
-                    text_out = "\n".join(parts).strip()
+            # 获取图片内容
+            images_list = msg.get("images")
+            if isinstance(images_list, list) and images_list:
+                first_image = images_list[0]
+                if isinstance(first_image, dict):
+                    image_url_data = first_image.get("image_url")
+                    if isinstance(image_url_data, dict):
+                        img_out = image_url_data.get("url")
 
         # 判断是否拿到图片
         if img_out:

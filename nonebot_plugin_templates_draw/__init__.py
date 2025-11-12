@@ -84,10 +84,11 @@ async def _(matcher: Matcher,
            ):
 
     images = await get_images_from_event(bot, event, reply_id)
-    if not images:
-        await matcher.finish(f"💡 请回复或发送图片，或@用户/提及自己以获取头像\n  命令列表：\n{usage}")
-
     raw = args.extract_plain_text().strip().lower()
+    
+    if not images or not raw:
+        await matcher.finish(f"💡 请加上模板并回复或发送图片，或@用户/提及自己以获取头像\n  命令列表：\n{usage}")
+        
     identifier = raw.split()[0] if raw else "0"
     prompt = get_prompt(identifier)
 

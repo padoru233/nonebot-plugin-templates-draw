@@ -14,8 +14,7 @@ from .utils import (
 
 usage = """模板列表
 添加/删除模板 <标识> <提示词>
-画图 <模板> [图片]/@xxx/自己
-"""
+画图 <模板> [图片]/@xxx/自己"""
 
 plugin_config = get_plugin_config(Config).templates_draw
 
@@ -87,7 +86,7 @@ async def _(matcher: Matcher,
     raw = args.extract_plain_text().strip().lower()
     
     if not images or not raw:
-        await matcher.finish(f"💡 请加上模板并回复或发送图片，或@用户/提及自己以获取头像\n  命令列表：\n{usage}")
+        await matcher.finish(f"💡 请加上模板并回复或发送图片，或@用户/提及自己以获取头像\n    *命令列表*\n{usage}")
         
     identifier = raw.split()[0] if raw else "0"
     prompt = get_prompt(identifier)

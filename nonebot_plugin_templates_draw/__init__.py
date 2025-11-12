@@ -62,7 +62,7 @@ async def _(matcher: Matcher, args: Message = CommandArg()):
         await matcher.finish(f"❌ 模板 “{ident}” 不存在")
 
 # 列表模板
-cmd_list = on_command("模板列表", aliases={"list_templates"}, priority=5, block=True)
+cmd_list = on_command("模板列表", aliases={"list_templates", "画图模板"}, priority=5, block=True)
 @cmd_list.handle()
 async def _(matcher: Matcher):
     tpl = list_templates()

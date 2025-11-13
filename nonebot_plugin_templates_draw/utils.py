@@ -131,6 +131,60 @@ def remove_template(identifier: str) -> bool:
         return True
     return False
 
+async def download_image_from_url(url: str, client: httpx.AsyncClient) -> Optional[bytes]:
+    """
+    辅助函数：从 URL 下载图片
+    """
+    try:
+        resp = await client.get(url, timeout=15)
+        if resp.status_code == 200:
+            return resp.content
+        else:
+            logger.warning(f"下载图片失败 {url}: HTTP {resp.status_code}")
+            return None
+    except Exception as e:
+        logger.warning(f"下载图片异常 {url}: {e}")
+        return None
+
+
+def extract_images_and_text(content: str) -> Tuple[List[Tuple[Optional[bytes], Optional[str]]], Optional[str]]:
+    """
+    辅助函数：从 content 中提取所有图片（base64 和 URL）以及文本
+    返回：([(image_bytes, image_url)], text_content)
+    """
+    images = []
+
+    # 1. 提取 base64 图片
+    base64_pattern = r'data:image/[^;,\s]+;base64,([A-Za-z0-9+/=]+)'
+    base64_matches = re.findall(base64_pattern, content)
+
+    for b64str in base64_matches:
+        try:
+            img_bytes = base64.b64decode(b64str)
+            images.append((img_bytes, None))
+        except Exception as e:
+            logger.warning(f"Base64 解码失败: {e}")
+
+    # 2. 提取 HTTP/HTTPS URL 图片
+    # 匹配 http:// 或 https:// 开头的图片链接
+    url_pattern = r'https?://[^\s\)\]"\'<>]+'
+    url_matches = re.findall(url_pattern, content)
+
+    for url in url_matches:
+        # 简单判断是否为图片链接
+        if any(url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']):
+            images.append((None, url))
+
+    # 3. 提取纯文本（移除所有图片数据和 markdown 图片标记）
+    text_content = re.sub(r'data:image/[^;,\s]+;base64,[A-Za-z0-9+/=]+', '', content)
+    text_content = re.sub(r'https?://[^\s\)\]"\'<>]+', '', text_content)
+    text_content = re.sub(r'!\[.*?\]\(.*?\)', '', text_content)
+    text_content = text_content.strip()
+    text_content = text_content if text_content else None
+
+    return images, text_content
+
+
 async def generate_template_images(
     images: List[Image.Image],
     prompt: Optional[str] = None
@@ -169,6 +223,8 @@ async def generate_template_images(
     }
 
     last_err = ""
+    api_connection_failed = False  # 标记是否为连接失败
+
     for attempt in range(1, plugin_config.max_total_attempts + 1):
         idx = _current_api_key_idx % len(keys)
         key = keys[idx]
@@ -182,85 +238,109 @@ async def generate_template_images(
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(url, headers=headers, json=payload)
+
+                # 成功连接，重置标记
+                api_connection_failed = False
+
+                if resp.status_code != 200:
+                    last_err = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                    logger.warning(f"[Attempt {attempt}] HTTP 错误，切换 Key：{resp.status_code}")
+                    await asyncio.sleep(1)
+                    continue
+
+                try:
+                    data = resp.json()
+                except Exception as e:
+                    last_err = f"JSON 解析失败: {e}"
+                    logger.warning(f"[Attempt {attempt}] JSON 解析失败：{e}")
+                    continue
+
+                if data.get("error"):
+                    err = data["error"]
+                    msg = err.get("message") if isinstance(err, dict) else str(err)
+                    last_err = f"API 返回错误: {msg}"
+                    logger.warning(f"[Attempt {attempt}] {last_err}")
+                    continue
+
+                choices = data.get("choices", [])
+                if not choices:
+                    last_err = "返回 choices 为空"
+                    continue
+
+                msg = choices[0].get("message", {}) or {}
+                content = msg.get("content", "")
+
+                if not content or not isinstance(content, str):
+                    last_err = "message.content 为空或非字符串"
+                    logger.warning(f"[Attempt {attempt}] {last_err}")
+                    continue
+
+                # 提取所有图片（base64 和 URL）以及文本
+                image_list, text_content = extract_images_and_text(content)
+
+                if not image_list:
+                    last_err = "content 中未找到图片数据（base64 或 URL）"
+                    logger.warning(f"[Attempt {attempt}] {last_err}")
+                    logger.debug(f"Content 内容: {content[:500]}")
+                    continue
+
+                # 处理所有图片（下载 URL 图片）
+                results = []
+                for idx, (img_bytes, img_url) in enumerate(image_list):
+                    if img_bytes:
+                        # Base64 图片已解码
+                        text = text_content if idx == 0 else None
+                        results.append((img_bytes, None, text))
+                        logger.info(f"成功解码第 {idx + 1} 张图片（Base64），大小: {len(img_bytes)} bytes")
+                    elif img_url:
+                        # URL 图片需要下载
+                        downloaded = await download_image_from_url(img_url, client)
+                        if downloaded:
+                            text = text_content if idx == 0 and not results else None
+                            results.append((downloaded, img_url, text))
+                            logger.info(f"成功下载第 {idx + 1} 张图片（URL），大小: {len(downloaded)} bytes")
+                        else:
+                            # 下载失败，但保留 URL
+                            text = text_content if idx == 0 and not results else None
+                            results.append((None, img_url, text))
+                            logger.warning(f"第 {idx + 1} 张图片下载失败，保留 URL: {img_url}")
+
+                if results:
+                    logger.info(f"成功解析 {len(results)} 张图片")
+                    return results
+                else:
+                    last_err = "所有图片解析均失败"
+                    logger.warning(f"[Attempt {attempt}] {last_err}")
+                    continue
+
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as e:
+            # 连接失败
+            api_connection_failed = True
+            last_err = f"网络连接失败: {e}"
+            logger.warning(f"[Attempt {attempt}] 无法连接到 API，切换 Key：{e}")
+            await asyncio.sleep(1)
+            continue
         except Exception as e:
-            last_err = f"网络异常: {e}"
-            logger.warning(f"[Attempt {attempt}] 网络异常，切换 Key：{e}")
+            last_err = f"未知异常: {e}"
+            logger.warning(f"[Attempt {attempt}] 发生异常，切换 Key：{e}")
             await asyncio.sleep(1)
             continue
 
-        if resp.status_code != 200:
-            last_err = f"HTTP {resp.status_code}: {resp.text}"
-            logger.warning(f"[Attempt {attempt}] HTTP 错误，切换 Key：{resp.status_code}")
-            await asyncio.sleep(1)
-            continue
-
-        try:
-            data = resp.json()
-        except Exception as e:
-            last_err = f"JSON 解析失败: {e}"
-            logger.warning(f"[Attempt {attempt}] JSON 解析失败：{e}")
-            continue
-
-        if data.get("error"):
-            err = data["error"]
-            msg = err.get("message") if isinstance(err, dict) else str(err)
-            last_err = f"API 返回错误: {msg}"
-            logger.warning(f"[Attempt {attempt}] {last_err}")
-            continue
-
-        choices = data.get("choices", [])
-        if not choices:
-            last_err = "返回 choices 为空"
-            continue
-
-        msg = choices[0].get("message", {}) or {}
-        content = msg.get("content", "")
-
-        if not content or not isinstance(content, str):
-            last_err = "message.content 为空或非字符串"
-            logger.warning(f"[Attempt {attempt}] {last_err}")
-            continue
-
-        # 直接搜索所有 base64 图片数据（data:image/xxx;base64,xxxxx）
-        # 匹配 data:image 开头的 base64 数据
-        base64_pattern = r'data:image/[^;,\s]+;base64,([A-Za-z0-9+/=]+)'
-        base64_matches = re.findall(base64_pattern, content)
-
-        if not base64_matches:
-            last_err = "content 中未找到 base64 图片数据"
-            logger.warning(f"[Attempt {attempt}] {last_err}")
-            logger.debug(f"Content 内容: {content[:500]}")  # 打印前500字符用于调试
-            continue
-
-        # 移除所有 base64 数据，保留纯文本
-        text_content = re.sub(r'data:image/[^;,\s]+;base64,[A-Za-z0-9+/=]+', '', content)
-        # 清理多余的标记符号（如 ![image]() 等）
-        text_content = re.sub(r'!\[image\]\(\s*\)', '', text_content)
-        text_content = text_content.strip()
-        text_content = text_content if text_content else None
-
-        # 解码所有 base64 图片
-        results = []
-        for idx, b64str in enumerate(base64_matches):
-            try:
-                img_bytes = base64.b64decode(b64str)
-                # 只在第一张图时附带文本
-                text = text_content if idx == 0 else None
-                results.append((img_bytes, None, text))
-                logger.info(f"成功解码第 {idx + 1} 张图片，大小: {len(img_bytes)} bytes")
-            except Exception as e:
-                logger.warning(f"图片 {idx + 1} Base64 解码失败: {e}")
-                continue
-
-        if results:
-            logger.info(f"成功解析 {len(results)} 张图片")
-            return results
-        else:
-            last_err = "所有图片解析均失败"
-            logger.warning(f"[Attempt {attempt}] {last_err}")
-            continue
-
-    raise RuntimeError(f"已尝试 {plugin_config.max_total_attempts} 次，仍未成功，最后错误：{last_err}")
+    # 所有尝试失败后的错误提示
+    if api_connection_failed:
+        raise RuntimeError(
+            f"已尝试 {plugin_config.max_total_attempts} 次，均无法连接到 API。\n"
+            f"请检查：\n"
+            f"1. API 地址是否正确: {plugin_config.gemini_api_url}\n"
+            f"2. 网络连接是否正常\n"
+            f"3. API Key 是否有效\n"
+            f"最后错误：{last_err}"
+        )
+    else:
+        raise RuntimeError(
+            f"已尝试 {plugin_config.max_total_attempts} 次，仍未成功。\n"
+            f"最后错误：{last_err}"
+        )
 
 async def forward_images(
     bot: Bot,

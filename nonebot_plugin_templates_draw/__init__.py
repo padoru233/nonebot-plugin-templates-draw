@@ -16,8 +16,6 @@ usage = """模板列表
 添加/删除模板 <标识> <提示词>
 画图 <模板> [图片]/@xxx/自己"""
 
-plugin_config = get_plugin_config(Config).templates_draw
-
 # 插件元数据
 __plugin_meta__ = PluginMetadata(
     name="模板绘图",
@@ -25,10 +23,11 @@ __plugin_meta__ = PluginMetadata(
     usage=usage,
     type="application",
     homepage="https://github.com/padoru233/nonebot-plugin-templates-draw",
-    config=plugin_config,
+    config=Config,
     supported_adapters={"~onebot.v11"},
 )
 
+plugin_config = get_plugin_config(Config).templates_draw
 
 # 插件启动日志
 @get_driver().on_startup

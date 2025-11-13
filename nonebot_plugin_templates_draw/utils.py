@@ -175,11 +175,28 @@ def extract_images_and_text(content: str) -> Tuple[List[Tuple[Optional[bytes], O
         if any(url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']):
             images.append((None, url))
 
-    # 3. 提取纯文本（移除所有图片数据和 markdown 图片标记）
-    text_content = re.sub(r'data:image/[^;,\s]+;base64,[A-Za-z0-9+/=]+', '', content)
+    # 3. 提取纯文本（移除所有图片数据和各种 markdown 标记）
+    text_content = content
+
+    # 移除 base64 图片数据
+    text_content = re.sub(r'data:image/[^;,\s]+;base64,[A-Za-z0-9+/=]+', '', text_content)
+
+    # 移除 HTTP/HTTPS 链接
     text_content = re.sub(r'https?://[^\s\)\]"\'<>]+', '', text_content)
-    text_content = re.sub(r'!\[.*?\]\(.*?\)', '', text_content)
+
+    # 移除各种 markdown 图片/链接标记
+    text_content = re.sub(r'!\[.*?\]\(.*?\)', '', text_content)  # ![alt](url)
+    text_content = re.sub(r'\[.*?\]\(\s*\)', '', text_content)   # [text]() 空链接
+    text_content = re.sub(r'\[下载\d*\]\(\s*\)', '', text_content)  # [下载]() 下载标记
+    text_content = re.sub(r'\[图片\d*\]\(\s*\)', '', text_content)  # [图片]() 图片标记
+    text_content = re.sub(r'\[image\d*\]\(\s*\)', '', text_content, flags=re.IGNORECASE)  # [image]() 图片标记
+
+    # 清理多余的空白字符和换行
+    text_content = re.sub(r'\n\s*\n', '\n', text_content)  # 多个连续换行变成单个
+    text_content = re.sub(r'^\s+|\s+$', '', text_content, flags=re.MULTILINE)  # 去除行首行尾空格
     text_content = text_content.strip()
+
+    # 如果只剩下空白字符，则返回 None
     text_content = text_content if text_content else None
 
     return images, text_content

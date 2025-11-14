@@ -1,12 +1,17 @@
-from typing import Optional
+from typing import Tuple, Optional, List
+
+from nonebot import get_driver, get_plugin_config, require
+require("nonebot_plugin_alconna")
 from nonebot_plugin_alconna import (
     Alconna,
     Args,
     on_alconna,
     AlconnaMatch,
-    Match
+    Match,
+    Option,
+    At,
+    MultiVar,
 )
-from nonebot import get_driver, get_plugin_config
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
 from nonebot.params import Depends
 from nonebot.matcher import Matcher
@@ -107,34 +112,68 @@ async def _(matcher: Matcher):
 cmd_draw = on_alconna(
     Alconna(
         "画图",
-        Args["template", str],
+        Args["template", str]["target", MultiVar(At), None],
     ),
-    aliases=["draw"],
+    aliases={"draw"},
     priority=5,
     block=True,
 )
 
+# 添加快捷方式：直接使用模板名
+cmd_draw.shortcut(
+    r"画图\s+(?P<template>\S+)",
+    command="画图",
+    arguments=["{template}"],
+    prefix=True,
+)
+
 @cmd_draw.handle()
-async def _(matcher: Matcher,
-            bot: Bot,
-            event: GroupMessageEvent,
-            template: Match[str],
-            reply_id: Optional[int] = Depends(get_reply_id),
-           ):
+async def _(
+    matcher: Matcher,
+    bot: Bot,
+    event: GroupMessageEvent,
+    template: str,
+    target: tuple[At, ...] = (),
+    reply_id: Optional[int] = Depends(get_reply_id),
+):
+    # 1. 模板校验
+    if not template:
+        await matcher.finish(
+            f"💡 请加上模板并回复或发送图片，或@用户/提及自己以获取头像\n"
+            f"    *命令列表*\n{usage}"
+        )
 
-    images = await get_images_from_event(bot, event, reply_id)
+    raw = template.strip().lower()
+    identifier = raw.split()[0] if raw else ""
+    if not identifier:
+        await matcher.finish(f"💡 请提供模板名称\n    *命令列表*\n{usage}")
 
-    if not template.available:
-        await matcher.finish(f"💡 请加上模板并回复或发送图片，或@用户/提及自己以获取头像\n    *命令列表*\n{usage}")
+    # 2. 从 target 抽出所有被 at 用户的 uid（保持字符串）
+    at_uids: List[str] = []
+    if target:
+        at_uids = [item.target for item in target]
+
+    # 3. 获取图片（消息/回复 的 image 段 + at_uids 头像 + raw_text "自己"）
+    images = await get_images_from_event(
+        bot,
+        event,
+        reply_id,
+        at_uids=at_uids,
+        raw_text=template,
+    )
 
     if not images:
-        await matcher.finish(f"💡 请回复或发送图片，或@用户/提及自己以获取头像\n    *命令列表*\n{usage}")
+        await matcher.finish(
+            f"💡 请回复或发送图片，或@用户/提及自己以获取头像\n"
+            f"    *命令列表*\n{usage}"
+        )
 
-    identifier = template.result.lower()
+    # 4. 获取提示词并生成
     prompt = get_prompt(identifier)
+    if not prompt:
+        await matcher.finish(f"❌ 未找到模板 '{identifier}'")
 
     await matcher.send("⏳ 正在生成图片，请稍候…")
-
     try:
         results = await generate_template_images(images, prompt)
     except Exception as e:

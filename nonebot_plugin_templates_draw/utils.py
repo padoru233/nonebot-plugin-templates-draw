@@ -411,70 +411,58 @@ async def forward_images(
 async def get_images_from_event(
     bot,
     event,
-    reply_msg_id: Optional[int]
+    reply_msg_id: Optional[int],
+    at_uids: List[str] = None,
+    raw_text: str = "",
 ) -> List[Image.Image]:
-    """
-    支持场景：
-    1. 回复一条带图消息：拉取回复消息里的图
-    2. 当前消息直接发图
-    3. @用户 或 文本 “自己”：拉取对应头像
-    返回 PIL Image 列表，空列表表示未拉到任何图
-    """
+    at_uids = at_uids or []
     images: List[Image.Image] = []
-    import re
-    from nonebot.adapters.onebot.v11.message import MessageSegment
 
-    # 1. 回复消息里拉图
-    if reply_msg_id:
-        try:
-            msg_data = await bot.get_msg(message_id=reply_msg_id)
-            for seg in msg_data["message"]:
-                if seg["type"] == "image":
-                    r = await httpx.AsyncClient().get(seg["data"]["url"], follow_redirects=True)
-                    if r.is_success:
-                        images.append(Image.open(BytesIO(r.content)))
-        except Exception:
-            pass
+    async with httpx.AsyncClient() as client:
+        # 1. 从回复消息拉图
+        if reply_msg_id:
+            try:
+                msg = await bot.get_msg(message_id=reply_msg_id)
+                for seg in msg["message"]:
+                    if seg["type"] == "image":
+                        r = await client.get(seg["data"]["url"], follow_redirects=True)
+                        if r.is_success:
+                            images.append(Image.open(BytesIO(r.content)))
+            except:
+                pass
 
-    # 2. 当前消息里直接发图 / @ / 文本
-    at_ids = []
-    mention_self = False
-    for seg in event.message:
-        if seg.type == "image":
-            r = await httpx.AsyncClient().get(seg.data["url"], follow_redirects=True)
-            if r.is_success:
-                images.append(Image.open(BytesIO(r.content)))
-        elif seg.type == "at":
-            at_ids.append(int(seg.data["qq"]))
-        elif seg.type == "text":
-            text = seg.data["text"].strip()
-            # 支持关键字“自己”
-            if "自己" in text:
-                mention_self = True
-            # 支持直接 @123456
-            for token in re.split(r"\s+", text):
-                if token.startswith("@") and token[1:].isdigit():
-                    at_ids.append(int(token[1:]))
+        # 2. 从当前消息拉图
+        for seg in event.message:
+            if seg.type == "image":
+                r = await client.get(seg.data["url"], follow_redirects=True)
+                if r.is_success:
+                    images.append(Image.open(BytesIO(r.content)))
 
-    # 3. 如果还没图，则拉头像
-    async def _fetch_avatar(uid: int) -> Optional[Image.Image]:
-        url = f"https://q1.qlogo.cn/g?b=qq&s=0&nk={uid}"
-        try:
-            r = await httpx.AsyncClient().get(url, follow_redirects=True, timeout=10)
-            if r.is_success:
-                return Image.open(BytesIO(r.content))
-        except Exception:
-            pass
-        return None
+        # 3. 如果已经有图，提前返回
+        if images:
+            await client.aclose()
+            return images
 
-    if not images:
-        if mention_self:
-            avatar = await _fetch_avatar(event.sender.user_id)
-            if avatar:
-                images.append(avatar)
-        for uid in at_ids:
+        # 4. 依次拉 at_uids 头像
+        async def _fetch_avatar(uid: str) -> Optional[Image.Image]:
+            url = f"https://q1.qlogo.cn/g?b=qq&s=640&nk={uid}"
+            try:
+                r = await client.get(url, follow_redirects=True, timeout=10)
+                if r.is_success:
+                    return Image.open(BytesIO(r.content))
+            except:
+                return None
+
+        for uid in at_uids:
             avatar = await _fetch_avatar(uid)
             if avatar:
                 images.append(avatar)
 
+        # 5. raw_text 包含"自己"再拉自己头像
+        if "自己" in raw_text:
+            me = str(event.sender.user_id)
+            avatar = await _fetch_avatar(me)
+            if avatar:
+                images.append(avatar)
+    await client.aclose()
     return images

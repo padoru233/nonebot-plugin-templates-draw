@@ -47,8 +47,8 @@ cmd_add = on_alconna(
     Alconna(
         "添加模板",
         Args["ident", str]["prompt", str, ...],  # ... 表示剩余所有文本
-        aliases={"add_template"}
     ),
+    aliases=["add_template"],
     priority=5,
     block=True,
 )
@@ -66,8 +66,8 @@ cmd_del = on_alconna(
     Alconna(
         "删除模板",
         Args["ident", str],
-        aliases={"del_template"}
     ),
+    aliases=["del_template"],
     priority=5,
     block=True,
 )
@@ -87,8 +87,8 @@ async def _(matcher: Matcher, ident: Match[str]):
 cmd_list = on_alconna(
     Alconna(
         "模板列表",
-        aliases={"list_templates"}
     ),
+    aliases=["list_templates"],
     priority=5,
     block=True,
 )
@@ -108,8 +108,8 @@ cmd_draw = on_alconna(
     Alconna(
         "画图",
         Args["template", str],
-        aliases={"draw"}
     ),
+    aliases=["draw"],
     priority=5,
     block=True,
 )

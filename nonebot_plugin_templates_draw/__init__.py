@@ -1,7 +1,14 @@
 from typing import Optional
-from nonebot import on_command, get_driver, get_plugin_config
+from nonebot_plugin_alconna import (
+    Alconna,
+    Args,
+    on_alconna,
+    AlconnaMatch,
+    Match
+)
+from nonebot import get_driver, get_plugin_config
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
-from nonebot.params import CommandArg, Depends
+from nonebot.params import Depends
 from nonebot.matcher import Matcher
 from nonebot.adapters.onebot.v11.event import GroupMessageEvent
 from nonebot.plugin import PluginMetadata
@@ -36,31 +43,56 @@ async def _on_startup():
     print(f"[templates-draw] Loaded {len(keys)} Keys, max_attempts={plugin_config.max_total_attempts}")
 
 # 添加模板
-cmd_add = on_command("添加模板", aliases={"add_template"}, priority=5, block=True)
+cmd_add = on_alconna(
+    Alconna(
+        "添加模板",
+        Args["ident", str]["prompt", str, ...],  # ... 表示剩余所有文本
+        aliases={"add_template"}
+    ),
+    priority=5,
+    block=True,
+)
+
 @cmd_add.handle()
-async def _(matcher: Matcher, args: Message = CommandArg()):
-    text = args.extract_plain_text().strip()
-    if " " not in text:
+async def _(matcher: Matcher, ident: Match[str], prompt: Match[str]):
+    if not ident.available or not prompt.available:
         await matcher.finish("格式：添加模板 <标识> <提示词>")
-    ident, prompt = text.split(None, 1)
-    add_template(ident, prompt)
-    await matcher.finish(f"✅ 已添加/更新 模板 “{ident}”")
+
+    add_template(ident.result, prompt.result)
+    await matcher.finish(f"✅ 已添加/更新 模板 "{ident.result}"")
 
 # 删除模板
-cmd_del = on_command("删除模板", aliases={"del_template"}, priority=5, block=True)
+cmd_del = on_alconna(
+    Alconna(
+        "删除模板",
+        Args["ident", str],
+        aliases={"del_template"}
+    ),
+    priority=5,
+    block=True,
+)
+
 @cmd_del.handle()
-async def _(matcher: Matcher, args: Message = CommandArg()):
-    ident = args.extract_plain_text().strip()
-    if not ident:
+async def _(matcher: Matcher, ident: Match[str]):
+    if not ident.available:
         await matcher.finish("格式：删除模板 <标识>")
-    ok = remove_template(ident)
+
+    ok = remove_template(ident.result)
     if ok:
-        await matcher.finish(f"✅ 已删除 模板 “{ident}”")
+        await matcher.finish(f"✅ 已删除 模板 "{ident.result}"")
     else:
-        await matcher.finish(f"❌ 模板 “{ident}” 不存在")
+        await matcher.finish(f"❌ 模板 "{ident.result}" 不存在")
 
 # 列表模板
-cmd_list = on_command("模板列表", aliases={"list_templates", "画图模板"}, priority=5, block=True)
+cmd_list = on_alconna(
+    Alconna(
+        "模板列表",
+        aliases={"list_templates"}
+    ),
+    priority=5,
+    block=True,
+)
+
 @cmd_list.handle()
 async def _(matcher: Matcher):
     tpl = list_templates()
@@ -72,22 +104,33 @@ async def _(matcher: Matcher):
     await matcher.finish(msg)
 
 # 画图命令
-cmd_draw = on_command("画图", aliases={"draw"}, priority=5, block=True)
+cmd_draw = on_alconna(
+    Alconna(
+        "画图",
+        Args["template", str],
+        aliases={"draw"}
+    ),
+    priority=5,
+    block=True,
+)
+
 @cmd_draw.handle()
 async def _(matcher: Matcher,
             bot: Bot,
             event: GroupMessageEvent,
-            args: Message = CommandArg(),
+            template: Match[str],
             reply_id: Optional[int] = Depends(get_reply_id),
            ):
 
     images = await get_images_from_event(bot, event, reply_id)
-    raw = args.extract_plain_text().strip().lower()
-    
-    if not images or not raw:
+
+    if not template.available:
         await matcher.finish(f"💡 请加上模板并回复或发送图片，或@用户/提及自己以获取头像\n    *命令列表*\n{usage}")
-        
-    identifier = raw.split()[0] if raw else "0"
+
+    if not images:
+        await matcher.finish(f"💡 请回复或发送图片，或@用户/提及自己以获取头像\n    *命令列表*\n{usage}")
+
+    identifier = template.result.lower()
     prompt = get_prompt(identifier)
 
     await matcher.send("⏳ 正在生成图片，请稍候…")

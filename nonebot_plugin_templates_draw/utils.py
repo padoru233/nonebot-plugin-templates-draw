@@ -347,10 +347,6 @@ async def generate_template_images(
     if api_connection_failed:
         raise RuntimeError(
             f"已尝试 {plugin_config.max_total_attempts} 次，均无法连接到 API。\n"
-            f"请检查：\n"
-            f"1. API 地址是否正确: {plugin_config.gemini_api_url}\n"
-            f"2. 网络连接是否正常\n"
-            f"3. API Key 是否有效\n"
             f"最后错误：{last_err}"
         )
     else:

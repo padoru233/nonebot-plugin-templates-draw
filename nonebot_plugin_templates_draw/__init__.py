@@ -59,7 +59,7 @@ async def _(matcher: Matcher, ident: Match[str], prompt: Match[str]):
         await matcher.finish("格式：添加模板 <标识> <提示词>")
 
     add_template(ident.result, prompt.result)
-    await matcher.finish(f"✅ 已添加/更新 模板 "{ident.result}"")
+    await matcher.finish(f'✅ 已添加/更新 模板 "{ident.result}"')
 
 # 删除模板
 cmd_del = on_alconna(
@@ -79,9 +79,9 @@ async def _(matcher: Matcher, ident: Match[str]):
 
     ok = remove_template(ident.result)
     if ok:
-        await matcher.finish(f"✅ 已删除 模板 "{ident.result}"")
+        await matcher.finish(f'✅ 已删除 模板 "{ident.result}"')
     else:
-        await matcher.finish(f"❌ 模板 "{ident.result}" 不存在")
+        await matcher.finish(f'❌ 模板 "{ident.result}" 不存在')
 
 # 列表模板
 cmd_list = on_alconna(

@@ -236,7 +236,25 @@ async def generate_template_images(
     url = f"{plugin_config.gemini_api_url}/v1/chat/completions"
     payload = {
         "model": plugin_config.gemini_model,
-        "messages": [{"role": "user", "content": content_parts}]
+        "messages": [{"role": "user", "content": content_parts}],
+        "safety_settings": [
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_NONE"
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH", 
+                "threshold": "BLOCK_NONE"
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": "BLOCK_NONE"
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": "BLOCK_NONE"
+            }
+        ]
     }
 
     last_err = ""

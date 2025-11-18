@@ -1,6 +1,6 @@
 from typing import Tuple, Optional, List
 
-from nonebot import get_driver, get_plugin_config, require
+from nonebot import logger, get_driver, get_plugin_config, require
 require("nonebot_plugin_alconna")
 from nonebot_plugin_alconna import (
     Alconna,
@@ -45,7 +45,7 @@ plugin_config = get_plugin_config(Config).templates_draw
 @get_driver().on_startup
 async def _on_startup():
     keys = plugin_config.gemini_api_keys
-    print(f"[templates-draw] Loaded {len(keys)} Keys, max_attempts={plugin_config.max_total_attempts}")
+    logger.info(f"[templates-draw] Loaded {len(keys)} Keys, max_attempts={plugin_config.max_total_attempts}")
 
 # 添加模板
 cmd_add = on_alconna(

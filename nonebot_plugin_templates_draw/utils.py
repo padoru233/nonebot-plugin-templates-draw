@@ -5,7 +5,7 @@ import httpx
 import re
 from io import BytesIO
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Union
 from PIL import Image
 from pydantic import ValidationError
 
@@ -81,33 +81,17 @@ def _save_user_prompts(data: Dict[str, str]):
 
 def list_templates() -> Dict[str, str]:
     """
-    返回“默认 + 用户”合并后的模板表，用户同名会覆盖默认。
+    返回"默认 + 用户"合并后的模板表，用户同名会覆盖默认。
     """
     defaults = _load_default_prompts()
     users = _load_user_prompts()
-    # 合并：先默认，再用户覆盖
-    merged = {**defaults, **{k: v for k, v in users.items() if v.strip()}}
+    merged = {**defaults, **{k: v.strip() for k, v in users.items() if v.strip()}}
     return merged
 
-def get_prompt(identifier: str) -> str:
-    """
-    先从用户模板找 {identifier}，如果不存在或为空则回退到默认模板，
-    再不行就拿第一个默认模板（key 最小的那个）。
-    """
-    users = _load_user_prompts()
-    if identifier in users and users[identifier].strip():
-        return users[identifier].strip()
-
-    defaults = _load_default_prompts()
-    if identifier in defaults:
-        return defaults[identifier]
-
-    # 回退到第一个默认
-    if defaults:
-        first_key = sorted(defaults.keys())[0]
-        return defaults[first_key]
-
-    return ""
+def get_prompt(identifier: str) -> Union[str, bool]:
+    """获取模板内容，直接使用合并后的模板表"""
+    templates = list_templates()
+    return templates.get(identifier, False)
 
 def add_template(identifier: str, prompt_text: str):
     """
@@ -243,7 +227,7 @@ async def generate_template_images(
                 "threshold": "BLOCK_NONE"
             },
             {
-                "category": "HARM_CATEGORY_HATE_SPEECH", 
+                "category": "HARM_CATEGORY_HATE_SPEECH",
                 "threshold": "BLOCK_NONE"
             },
             {
@@ -271,7 +255,7 @@ async def generate_template_images(
         }
 
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=90) as client:
                 resp = await client.post(url, headers=headers, json=payload)
 
                 # 成功连接，重置标记
@@ -348,7 +332,14 @@ async def generate_template_images(
                     logger.warning(f"[Attempt {attempt}] {last_err}")
                     continue
 
-        except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as e:
+        except httpx.TimeoutException as e:
+            # 超时异常单独处理
+            api_connection_failed = True
+            last_err = f"请求超时（90秒无响应）: {e}"
+            logger.warning(f"[Attempt {attempt}] 请求超时，切换 Key：{e}")
+            await asyncio.sleep(1)
+            continue
+        except (httpx.ConnectError, httpx.NetworkError) as e:
             # 连接失败
             api_connection_failed = True
             last_err = f"网络连接失败: {e}"
@@ -363,10 +354,18 @@ async def generate_template_images(
 
     # 所有尝试失败后的错误提示
     if api_connection_failed:
-        raise RuntimeError(
-            f"已尝试 {plugin_config.max_total_attempts} 次，均无法连接到 API。\n"
-            f"最后错误：{last_err}"
-        )
+        if "超时" in last_err:
+            raise RuntimeError(
+                f"已尝试 {plugin_config.max_total_attempts} 次，均请求超时。\n"
+                f"API 服务可能繁忙，请稍后再试。\n"
+                f"最后错误：{last_err}"
+            )
+        else:
+            raise RuntimeError(
+                f"已尝试 {plugin_config.max_total_attempts} 次，均无法连接到 API。\n"
+                f"请检查网络连接或 API 地址配置。\n"
+                f"最后错误：{last_err}"
+            )
     else:
         raise RuntimeError(
             f"已尝试 {plugin_config.max_total_attempts} 次，仍未成功。\n"

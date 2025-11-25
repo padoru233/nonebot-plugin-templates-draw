@@ -29,11 +29,61 @@ class ScopedConfig(BaseModel):
 
     prompt_拿捏: str = "Create a high-resolution advertising photograph featuring the character from the provided image, held delicately between a person's thumb and index finger. Clean white background, studio lighting, soft shadows. The hand is well-groomed, natural skin tone, and positioned to highlight the character's appearance and details. The character appears miniature but hyper-detailed and accurate to the reference image, centered in the frame with a shallow depth of field. Emulates luxury product photography and minimalist commercial style. The character must match exactly the person/figure shown in the reference image, maintaining their pose, clothing, and distinctive features."
 
-    prompt_苦命鸳鸯: str = "Three-panel manga creation instructions\nCore principle: Character design\nMust strictly base character designs on the two provided images.\nMust be two completely different characters:\nImage 1 generates Character A.\nImage 2 generates Character B.\nAll three panels must be in one single image\nOverall style and layout\nArt style: Black and white manga style.\nShots: All shots are close-ups, focusing on character expressions and upper body.\nLayout:\nTop: One full panel (Panel 1).\nBottom: Two panels side by side (Panel 2 on left, Panel 3 on right).\nDialogue: All dialogue must be placed in speech bubbles, no repeated text.\nDetailed panel descriptions\nPanel 1 (Top)\nCharacter: Character A (Image 1).\nExpression/Action: Character's mouth tightly closed, tears continuously flowing from eyes, gazing at camera with resentful eyes.\nSpeech bubble content: \"...\"\nPanel 2 (Bottom left)\nCharacter: Character A (Image 1).\nExpression/Action: Character's expression turns to regret, crying, emotionally asking a question.\nSpeech bubble content: \"You, what do you have to say?\"\nPanel 3 (Bottom right)\nCharacter: Character B (Image 2).\nExpression/Action: Character's expression is resolute and solemn, eyes tightly closed. A rope hangs down from above, tied around his neck.\nSpeech bubble content: \"Nothing more to say, please proceed!\""
+    prompt_苦命鸳鸯: str = '''
+    # **三格漫画创作指令**
 
-    prompt_海的那边: str = "Generate a triptych artistic portrait based on the game character from the image. Each panel has a fixed 3:4 ratio. Beach portrait theme with seaside sand, sunset sky with evening glow, calm sea surface. Character consistent with reference image.\nUpper panel (1st): Close-up shot, back view standing on the beach, hair blown by wind. Subtitle: \"What is behind the sea?\"\nMiddle panel (2nd): Side view standing by the sea, holding orange flower bouquet. Subtitle: \"You don't have to tell me\"\nLower panel (3rd): Facial close-up, hair flowing in the wind. Subtitle: \"I will go to see it myself\""
+    ## **核心原则：角色形象**
 
-    prompt_蹲姿: str = "Based on the provided reference image, automatically identify the character’s appearance (hair color, hairstyle, outfit, accessories, etc.). Then depict her in a position with her heels lifted off the ground and pressed firmly against her buttocks—fully squatting on her toes, heels touching, toes splayed outward, two feet forming a Λ-shape. Legs bent and spread apart at the knees. Both hands are raised beside her head in a V-sign, and she’s sticking out her tongue for a playful, cute contrast. Use an eye-level camera angle and a perfectly centered composition so she occupies the exact middle of the frame."
+    *   **必须严格基于用户提供的两张图片生成角色形象**。
+    *   **必须是两个完全不同的角色**：
+        *   `图1` 用于生成 **角色A**。
+        *   `图2` 用于生成 **角色B**。
+    *   **三格漫画的内容只需放在一张图里
+
+    ---
+
+    ## **整体风格与布局**
+
+    *   **画风**： 黑白漫画风格。
+    *   **镜头**： 所有镜头均为**近身特写**，聚焦于角色的表情和上半身。
+    *   **布局**：
+        *   顶部：一整格（第一格）。
+        *   底部：左右两格（第二格在左，第三格在右）。
+    *   **对话**： 所有对话内容必须放置在对话框内，且无重复文字。
+
+    ---
+
+    ## **分镜详细描述**
+
+    ### **第一格 (顶部)**
+
+    *   **出场角色**： **角色A** (`图1`)。
+    *   **角色表情/动作**： 角色紧闭着嘴，眼泪不断从眼眶中流出，眼神充满幽怨地凝视着镜头。
+    *   **对话框内容**：
+        > "……"
+
+    ### **第二格 (左下)**
+
+    *   **出场角色**： **角色A** (`图1`)。
+    *   **角色表情/动作**： 角色表情转为悔恨，哭泣着，情绪激动地发问。
+    *   **对话框内容**：
+        > "你，你可有何话说？"
+
+    ### **第三格 (右下)**
+
+    *   **出场角色**： **角色B** (`图2`)。
+    *   **角色表情/动作**： 角色表情决绝而庄重，双眼紧闭。一根绳索从画面上方垂下，系在他的脖子上。
+    *   **对话框内容**：
+        > "再无话说，请速动手！"
+    '''
+
+    prompt_海的那边: str = '''
+    以图片游戏人物为基础，生成一张三拼图格式的艺术感写真图，每张图固定比例为3:4，海边写真图，场景为海边沙滩，天空呈现夕阳晚霞，海面平静，画面中有人物和参考图一致，上部第一张为近景，站在沙滩上的背影，头发被风吹起，添加中英字幕“海的那边是什么”“ What is behind the sea?”。中部第2张是手持橙色花束，侧身站立于海边，添加中英字幕，“你不用告诉我”“ You dont have to tell me”。下部第三张是面部特写，头发随风飘动，添加中英字幕，“我自己会去看”“  I will go to see it mys
+    '''
+
+    prompt_蹲姿: str = '''
+    请生成一张图: 人物呈蹲姿，双腿分开，双手在头部两侧比出“V”字手势，姿态较为活泼且具有张力。吐舌的表情增添了俏皮、可爱的风格，与整体的风格有反差感，显得较为灵动有趣。采用平视视角，镜头与人物处于同一水平高度，能够让观众与人物之间产生一种平等的视觉交流感，使人物形象更加亲近、真实。采用中心构图，人物位于画面正中央，这种构图方式可以将观众的注意力高度集中在人物身上，突出主体
+    '''
 
 
 class Config(BaseModel):

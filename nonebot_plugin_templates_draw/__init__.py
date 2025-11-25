@@ -11,6 +11,7 @@ from nonebot_plugin_alconna import (
     Option,
     At,
     MultiVar,
+    CommandMeta,
 )
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
 from nonebot.params import Depends
@@ -51,7 +52,8 @@ async def _on_startup():
 cmd_add = on_alconna(
     Alconna(
         "添加模板",
-        Args["ident", str]["prompt", str, ...],  # ... 表示剩余所有文本
+        Args["ident", str]["prompt", MultiVar(str)],
+        meta=CommandMeta(compact=True),
     ),
     aliases=["add_template"],
     priority=5,
@@ -59,12 +61,15 @@ cmd_add = on_alconna(
 )
 
 @cmd_add.handle()
-async def _(matcher: Matcher, ident: Match[str], prompt: Match[str]):
-    if not ident.available or not prompt.available:
+async def _(matcher: Matcher, ident: str, prompt: tuple[str, ...]):
+    # MultiVar 会返回 tuple，合并成字符串
+    prompt_text = " ".join(prompt)
+
+    if not prompt_text.strip():
         await matcher.finish("格式：添加模板 <标识> <提示词>")
 
-    add_template(ident.result, prompt.result)
-    await matcher.finish(f'✅ 已添加/更新 模板 "{ident.result}"')
+    add_template(ident, prompt_text)
+    await matcher.finish(f'✅ 已添加/更新 模板 "{ident}"')
 
 # 删除模板
 cmd_del = on_alconna(

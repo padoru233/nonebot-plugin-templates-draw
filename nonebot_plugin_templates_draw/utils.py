@@ -431,12 +431,23 @@ async def get_images_from_event(
     reply_msg_id: Optional[int],
     at_uids: List[str] = None,
     raw_text: str = "",
+    message_image_urls: List[str] = None,  # 新增：从 Alconna 获取的图片 URL
 ) -> List[Image.Image]:
     at_uids = at_uids or []
+    message_image_urls = message_image_urls or []
     images: List[Image.Image] = []
 
     async with httpx.AsyncClient() as client:
-        # 1. 从回复消息拉图
+        # 1. 处理 Alconna 解析到的消息图片
+        for url in message_image_urls:
+            try:
+                r = await client.get(url, follow_redirects=True, timeout=10)
+                if r.is_success:
+                    images.append(Image.open(BytesIO(r.content)))
+            except:
+                pass
+
+        # 2. 从回复消息拉图
         if reply_msg_id:
             try:
                 msg = await bot.get_msg(message_id=reply_msg_id)
@@ -448,19 +459,11 @@ async def get_images_from_event(
             except:
                 pass
 
-        # 2. 从当前消息拉图
-        for seg in event.message:
-            if seg.type == "image":
-                r = await client.get(seg.data["url"], follow_redirects=True)
-                if r.is_success:
-                    images.append(Image.open(BytesIO(r.content)))
-
-        # 3. 如果已经有图，提前返回
+        # 3. 如果已经有图片了，直接返回（不需要头像）
         if images:
-            await client.aclose()
             return images
 
-        # 4. 依次拉 at_uids 头像
+        # 4. 没有图片时，才去获取头像
         async def _fetch_avatar(uid: str) -> Optional[Image.Image]:
             url = f"https://q1.qlogo.cn/g?b=qq&s=640&nk={uid}"
             try:
@@ -470,16 +473,10 @@ async def get_images_from_event(
             except:
                 return None
 
+        # 依次拉 at_uids 头像
         for uid in at_uids:
             avatar = await _fetch_avatar(uid)
             if avatar:
                 images.append(avatar)
 
-        # 5. raw_text 包含"自己"再拉自己头像
-        if "自己" in raw_text:
-            me = str(event.sender.user_id)
-            avatar = await _fetch_avatar(me)
-            if avatar:
-                images.append(avatar)
-    await client.aclose()
     return images

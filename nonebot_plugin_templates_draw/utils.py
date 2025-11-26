@@ -131,60 +131,67 @@ async def download_image_from_url(url: str, client: httpx.AsyncClient) -> Option
         return None
 
 
-def extract_images_and_text(content: str) -> Tuple[List[Tuple[Optional[bytes], Optional[str]]], Optional[str]]:
+# 预编译正则表达式，避免重复编译
+_BASE64_PATTERN = re.compile(r'data:image/[^;,\s]+;base64,([A-Za-z0-9+/=\s]+)')  # 允许空白字符
+_URL_PATTERN = re.compile(r'https?://[^\s\)\]"\'<>]+')
+_IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
+
+# 预编译清理文本的正则表达式
+_CLEANUP_PATTERNS = [
+    re.compile(r'data:image/[^;,\s]+;base64,[A-Za-z0-9+/=\s]+'),  # base64 图片（允许空白）
+    re.compile(r'https?://[^\s\)\]"\'<>]+'),                      # HTTP/HTTPS 链接
+    re.compile(r'!\[.*?\]\(.*?\)'),                               # ![alt](url)
+    re.compile(r'\[.*?\]\(\s*\)'),                                # [text]() 空链接
+    re.compile(r'\[下载\d*\]\(\s*\)'),                            # [下载]() 下载标记
+    re.compile(r'\[图片\d*\]\(\s*\)'),                            # [图片]() 图片标记
+    re.compile(r'\[image\d*\]\(\s*\)', re.IGNORECASE),            # [image]() 图片标记
+]
+
+_WHITESPACE_PATTERN = re.compile(r'\n\s*\n')
+_LINE_SPACES_PATTERN = re.compile(r'^\s+|\s+$', re.MULTILINE)
+
+
+def extract_images_and_text_memory_efficient(content: str) -> Tuple[List[Tuple[Optional[bytes], Optional[str]]], Optional[str]]:
     """
-    辅助函数：从 content 中提取所有图片（base64 和 URL）以及文本
+    优化版本：从 content 中提取所有图片（base64 和 URL）以及文本
     返回：([(image_bytes, image_url)], text_content)
     """
+    if not content:
+        return [], None
+
     images = []
 
-    # 1. 提取 base64 图片
-    base64_pattern = r'data:image/[^;,\s]+;base64,([A-Za-z0-9+/=]+)'
-    base64_matches = re.findall(base64_pattern, content)
+    # 1. 先找到所有 base64 位置，但不立即解码
+    base64_positions = []
+    for match in _BASE64_PATTERN.finditer(content):
+        base64_positions.append((match.start(), match.end(), match.group(1)))
 
-    for b64str in base64_matches:
+    # 2. 逐个处理 base64（避免同时在内存中保存多个大图片）
+    for start, end, b64str in base64_positions:
         try:
+            b64str = re.sub(r'\s+', '', b64str)
             img_bytes = base64.b64decode(b64str)
             images.append((img_bytes, None))
+            logger.debug(f"解码 base64 图片: {len(img_bytes)} bytes")
         except Exception as e:
             logger.warning(f"Base64 解码失败: {e}")
 
-    # 2. 提取 HTTP/HTTPS URL 图片
-    # 匹配 http:// 或 https:// 开头的图片链接
-    url_pattern = r'https?://[^\s\)\]"\'<>]+'
-    url_matches = re.findall(url_pattern, content)
-
-    for url in url_matches:
-        # 简单判断是否为图片链接
-        if any(url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']):
+    # 3. URL 图片处理
+    for match in _URL_PATTERN.finditer(content):
+        url = match.group(0)
+        if any(url.lower().endswith(ext) for ext in _IMAGE_EXTS):
             images.append((None, url))
 
-    # 3. 提取纯文本（移除所有图片数据和各种 markdown 标记）
+    # 4. 文本清理
     text_content = content
+    for pattern in _CLEANUP_PATTERNS:
+        text_content = pattern.sub('', text_content)
 
-    # 移除 base64 图片数据
-    text_content = re.sub(r'data:image/[^;,\s]+;base64,[A-Za-z0-9+/=]+', '', text_content)
-
-    # 移除 HTTP/HTTPS 链接
-    text_content = re.sub(r'https?://[^\s\)\]"\'<>]+', '', text_content)
-
-    # 移除各种 markdown 图片/链接标记
-    text_content = re.sub(r'!\[.*?\]\(.*?\)', '', text_content)  # ![alt](url)
-    text_content = re.sub(r'\[.*?\]\(\s*\)', '', text_content)   # [text]() 空链接
-    text_content = re.sub(r'\[下载\d*\]\(\s*\)', '', text_content)  # [下载]() 下载标记
-    text_content = re.sub(r'\[图片\d*\]\(\s*\)', '', text_content)  # [图片]() 图片标记
-    text_content = re.sub(r'\[image\d*\]\(\s*\)', '', text_content, flags=re.IGNORECASE)  # [image]() 图片标记
-
-    # 清理多余的空白字符和换行
-    text_content = re.sub(r'\n\s*\n', '\n', text_content)  # 多个连续换行变成单个
-    text_content = re.sub(r'^\s+|\s+$', '', text_content, flags=re.MULTILINE)  # 去除行首行尾空格
+    text_content = _WHITESPACE_PATTERN.sub('\n', text_content)
+    text_content = _LINE_SPACES_PATTERN.sub('', text_content)
     text_content = text_content.strip()
 
-    # 如果只剩下空白字符，则返回 None
-    text_content = text_content if text_content else None
-
-    return images, text_content
-
+    return images, text_content if text_content else None
 
 async def generate_template_images(
     images: List[Image.Image],

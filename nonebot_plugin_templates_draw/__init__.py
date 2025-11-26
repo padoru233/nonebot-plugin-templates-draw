@@ -26,9 +26,10 @@ from .utils import (
 )
 
 
-usage = """画图 <模板> [图片]/@xxx
+usage = """画图 <模板标识> [图片]/@xxx
 添加/删除模板 <模板标识> <提示词>
-模板列表"""
+模板列表
+查看模板 <模板标识>"""
 
 # 插件元数据
 __plugin_meta__ = PluginMetadata(
@@ -86,7 +87,7 @@ cmd_del = on_alconna(
 @cmd_del.handle()
 async def _(matcher: Matcher, ident: Match[str]):
     if not ident.available:
-        await matcher.finish("格式：删除模板 <标识>")
+        await matcher.finish("格式：删除模板 <模板标识>")
 
     ok = remove_template(ident.result)
     if ok:
@@ -111,8 +112,62 @@ async def _(matcher: Matcher):
         await matcher.finish("当前没有任何模板")
     msg = "当前模板：\n"
     for k, v in tpl.items():
-        msg += f"- {k} : {v[:30]}...\n"
+        msg += f"- {k} : {v[:15]}...\n"
     await matcher.finish(msg)
+
+# 查看模板详情
+cmd_view = on_alconna(
+    Alconna(
+        "查看模板",
+        Args["name", str],
+    ),
+    aliases=["view_template", "模板详情"],
+    priority=5,
+    block=True,
+)
+
+@cmd_view.handle()
+async def _(matcher: Matcher, name: str):
+    tpl = list_templates()
+    if not tpl:
+        await matcher.finish("当前没有任何模板")
+
+    # 查找模板（支持模糊匹配）
+    target_name = None
+    target_content = None
+
+    # 精确匹配
+    if name in tpl:
+        target_name = name
+        target_content = tpl[name]
+    else:
+        # 模糊匹配
+        matches = []
+        for k, v in tpl.items():
+            if name.lower() in k.lower():
+                matches.append((k, v))
+
+        if len(matches) == 1:
+            target_name, target_content = matches[0]
+        elif len(matches) > 1:
+            msg = f"找到多个匹配的模板：\n"
+            for k, v in matches:
+                msg += f"- {k} : {v[:15]}...\n"
+            msg += "\n请使用更精确的名称"
+            await matcher.finish(msg)
+        else:
+            await matcher.finish(f"未找到模板：{name}")
+
+    if target_content:
+        # 格式化显示模板内容
+        msg = f"模板名称：{target_name}\n"
+        msg += f"模板内容：\n{target_content}"
+
+        # 如果内容太长，截断显示
+        if len(msg) > 1900:
+            msg = msg[:1900] + "\n...(内容过长，已截断)"
+
+        await matcher.finish(msg)
 
 # 画图命令
 cmd_draw = on_alconna(

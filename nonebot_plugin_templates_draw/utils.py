@@ -241,8 +241,16 @@ async def generate_template_images(
         ]
     }
 
+    # 添加 Gemini 3 配置
+    if "banana-2" in plugin_config.gemini_model.lower() or "gemini-3" in plugin_config.gemini_model.lower():
+        payload["generation_config"] = {
+            # 允许生成包含成人和儿童的图片
+            "personGeneration": "allow_all"
+        }
+
     last_err = ""
-    api_connection_failed = False  # 标记是否为连接失败
+    # 标记是否为连接失败
+    api_connection_failed = False
 
     for attempt in range(1, plugin_config.max_total_attempts + 1):
         idx = _current_api_key_idx % len(keys)
@@ -431,7 +439,7 @@ async def get_images_from_event(
     reply_msg_id: Optional[int],
     at_uids: List[str] = None,
     raw_text: str = "",
-    message_image_urls: List[str] = None,  # 新增：从 Alconna 获取的图片 URL
+    message_image_urls: List[str] = None,
 ) -> List[Image.Image]:
     at_uids = at_uids or []
     message_image_urls = message_image_urls or []
@@ -441,11 +449,11 @@ async def get_images_from_event(
         # 1. 处理 Alconna 解析到的消息图片
         for url in message_image_urls:
             try:
-                r = await client.get(url, follow_redirects=True, timeout=10)
-                if r.is_success:
-                    images.append(Image.open(BytesIO(r.content)))
-            except:
-                pass
+                img_bytes = await download_image_from_url(url, client)
+                if img_bytes:
+                    images.append(Image.open(BytesIO(img_bytes)))
+            except Exception as e:
+                logger.warning(f"处理 Alconna 图片失败 {url}: {e}")
 
         # 2. 从回复消息拉图
         if reply_msg_id:
@@ -453,11 +461,12 @@ async def get_images_from_event(
                 msg = await bot.get_msg(message_id=reply_msg_id)
                 for seg in msg["message"]:
                     if seg["type"] == "image":
-                        r = await client.get(seg["data"]["url"], follow_redirects=True)
-                        if r.is_success:
-                            images.append(Image.open(BytesIO(r.content)))
-            except:
-                pass
+                        img_url = seg["data"]["url"]
+                        img_bytes = await download_image_from_url(img_url, client)
+                        if img_bytes:
+                            images.append(Image.open(BytesIO(img_bytes)))
+            except Exception as e:
+                logger.warning(f"从回复消息获取图片失败: {e}")
 
         # 3. 如果已经有图片了，直接返回（不需要头像）
         if images:
@@ -467,10 +476,12 @@ async def get_images_from_event(
         async def _fetch_avatar(uid: str) -> Optional[Image.Image]:
             url = f"https://q1.qlogo.cn/g?b=qq&s=640&nk={uid}"
             try:
-                r = await client.get(url, follow_redirects=True, timeout=10)
-                if r.is_success:
-                    return Image.open(BytesIO(r.content))
-            except:
+                img_bytes = await download_image_from_url(url, client)
+                if img_bytes:
+                    return Image.open(BytesIO(img_bytes))
+                return None
+            except Exception as e:
+                logger.warning(f"获取头像失败 {uid}: {e}")
                 return None
 
         # 依次拉 at_uids 头像

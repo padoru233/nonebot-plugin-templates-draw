@@ -217,7 +217,7 @@ async def generate_template_images(
             "image_url": {"url": f"data:image/png;base64,{b64data}"}
         })
 
-    url = f"{plugin_config.gemini_api_url}/v1/chat/completions"
+    url = f"{plugin_config.gemini_api_url}"
     payload = {
         "model": plugin_config.gemini_model,
         "messages": [{"role": "user", "content": content_parts}],

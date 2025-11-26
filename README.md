@@ -74,7 +74,7 @@ _✨ NoneBot2 一个模板绘图插件 ✨_
 
 | 配置项 | 必填 | 默认值 | 说明 |
 |:-----:|:----:|:----:|:----:|
-| TEMPLATES_DRAW__GEMINI_API_URL | 是 | https://generativelanguage.googleapis.com | Gemini API Url 默认为官方Url（调用方式并非Gemini原生而是OpenAI格式） |
+| TEMPLATES_DRAW__GEMINI_API_URL | 是 | https://generativelanguage.googleapis.com/v1beta/openai/ | Gemini API Url 默认为官方完整Url（调用方式并非Gemini原生而是OpenAI格式），可以替换为 https://xxxxx.xxx/v1/chat/completions 的格式 |
 | TEMPLATES_DRAW__GEMINI_API_KEYS | 是 | ["xxxxxx"] | 需要付费key，填入你的多个API Key，例如 ['key1', 'key2', 'key3'] |
 | TEMPLATES_DRAW__GEMINI_MODEL | 否 | gemini-2.5-flash-image-preview | Gemini 模型 默认为 gemini-2.5-flash-image-preview |
 | TEMPLATES_DRAW__MAX_TOTAL_ATTEMPTS | 否 | 2 | 这一张图的最大尝试次数（包括首次尝试），默认2次，建议不小于Key数量，保证每个Key至少轮到1次 |

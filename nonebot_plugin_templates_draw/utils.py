@@ -151,7 +151,7 @@ _WHITESPACE_PATTERN = re.compile(r'\n\s*\n')
 _LINE_SPACES_PATTERN = re.compile(r'^\s+|\s+$', re.MULTILINE)
 
 
-def extract_images_and_text_memory_efficient(content: str) -> Tuple[List[Tuple[Optional[bytes], Optional[str]]], Optional[str]]:
+def extract_images_and_text(content: str) -> Tuple[List[Tuple[Optional[bytes], Optional[str]]], Optional[str]]:
     """
     优化版本：从 content 中提取所有图片（base64 和 URL）以及文本
     返回：([(image_bytes, image_url)], text_content)

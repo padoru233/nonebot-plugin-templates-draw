@@ -335,14 +335,24 @@ def build_payload(api_type: str, images: list, prompt: str) -> Dict[str, Any]:
                 }
             })
 
+        safety_settings = [
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_CIVIC_INTEGRITY", "threshold": "BLOCK_NONE"},
+        ]
+
         return {
-            "contents": [{"parts": parts}],
-            "safetySettings": [
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            ]
+            "contents": [
+                {
+                    "parts": parts,
+                    "role": "user"
+                }
+            ],
+            "config": {
+                "safety_settings": safety_settings
+            }
         }
 
 def parse_api_response(data: Dict[str, Any], api_type: str) -> Tuple[Optional[str], Optional[List[Dict]], Optional[str]]:

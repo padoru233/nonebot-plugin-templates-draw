@@ -371,11 +371,49 @@ def parse_api_response(data: Dict[str, Any], api_type: str) -> Tuple[Optional[st
         content = msg.get("content", "")
         return content, None, None
     else:
-        candidates = data.get("candidates", [])
-        if not candidates:
+        # Gemini API 处理
+
+        # 1. 检查 promptFeedback 是否被屏蔽
+        prompt_feedback = data.get("promptFeedback", {})
+
+        block_reason = prompt_feedback.get("blockReason")
+        if block_reason:
+            reason_map = {
+                "PROHIBITED_CONTENT": "提示包含被禁止的内容",
+                "BLOCKED_REASON_UNSPECIFIED": "提示被屏蔽（原因未指定）",
+                "SAFETY": "提示因安全原因被屏蔽",
+                "OTHER": "提示因其他原因被屏蔽"
+            }
+            readable_reason = reason_map.get(block_reason, f"提示被屏蔽：{block_reason}")
+            return None, None, f"提示被屏蔽: {readable_reason}"
+
+        if prompt_feedback.get("safetyRatings") is None and "safetyRatings" in prompt_feedback:
+            return None, None, "提示被安全过滤器屏蔽"
+
+        # 2. 检查是否有 candidates
+        candidates = data.get("candidates")
+
+        # 情况3: candidates 为 None 或空列表，且没有明确的屏蔽原因
+        if candidates is None:
+            return None, None, "请求被拒绝，可能因为内容安全策略"
+
+        if not candidates:  # 空列表
             return None, None, "返回 candidates 为空"
 
         candidate = candidates[0]
+
+        # 3. 检查 candidate 的 finishReason 是否表示被屏蔽
+        finish_reason = candidate.get("finishReason")
+        if finish_reason in ["SAFETY", "RECITATION", "PROHIBITED_CONTENT"]:
+            finish_reason_map = {
+                "SAFETY": "响应因安全原因被屏蔽",
+                "RECITATION": "响应因引用原因被屏蔽",
+                "PROHIBITED_CONTENT": "响应包含被禁止的内容"
+            }
+            readable_reason = finish_reason_map.get(finish_reason, f"响应被屏蔽：{finish_reason}")
+            return None, None, f"响应被屏蔽: {readable_reason}"
+
+        # 4. 正常解析内容
         content_obj = candidate.get("content", {})
         parts = content_obj.get("parts", [])
         if not parts:

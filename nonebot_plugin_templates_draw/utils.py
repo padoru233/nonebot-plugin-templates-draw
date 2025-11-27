@@ -5,7 +5,7 @@ import httpx
 import re
 from io import BytesIO
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict, Union
+from typing import Any, List, Optional, Tuple, Dict, Union
 from PIL import Image
 from pydantic import ValidationError
 
@@ -151,137 +151,328 @@ _WHITESPACE_PATTERN = re.compile(r'\n\s*\n')
 _LINE_SPACES_PATTERN = re.compile(r'^\s+|\s+$', re.MULTILINE)
 
 
-def extract_images_and_text(content: str) -> Tuple[List[Tuple[Optional[bytes], Optional[str]]], Optional[str]]:
+def extract_images_and_text(content: str, parts: Optional[List[Dict]] = None, api_type: str = "openai") -> Tuple[List[Tuple[Optional[bytes], Optional[str]]], Optional[str]]:
     """
-    优化版本：从 content 中提取所有图片（base64 和 URL）以及文本
+    从 content 或 parts 中提取所有图片（base64 和 URL）以及文本
+    支持 OpenAI 和 Gemini 两种格式
     返回：([(image_bytes, image_url)], text_content)
     """
-    if not content:
-        return [], None
-
     images = []
+    text_content = ""
 
-    # 1. 先找到所有 base64 位置，但不立即解码
-    base64_positions = []
-    for match in _BASE64_PATTERN.finditer(content):
-        base64_positions.append((match.start(), match.end(), match.group(1)))
+    if api_type == "gemini" and parts:
+        # Gemini 原生格式：从 parts 中提取
+        for part in parts:
+            if part.get("thought", False):
+                continue  # 跳过思考部分
 
-    # 2. 逐个处理 base64（避免同时在内存中保存多个大图片）
-    for start, end, b64str in base64_positions:
-        try:
-            b64str = re.sub(r'\s+', '', b64str)
-            img_bytes = base64.b64decode(b64str)
-            images.append((img_bytes, None))
-            logger.debug(f"解码 base64 图片: {len(img_bytes)} bytes")
-        except Exception as e:
-            logger.warning(f"Base64 解码失败: {e}")
+            # 处理文本
+            if "text" in part:
+                text_content += part["text"] + "\n"
 
-    # 3. URL 图片处理
-    for match in _URL_PATTERN.finditer(content):
-        url = match.group(0)
-        if any(url.lower().endswith(ext) for ext in _IMAGE_EXTS):
-            images.append((None, url))
+            # 处理内联数据（base64 图片）
+            if "inlineData" in part:
+                inline_data = part["inlineData"]
+                mime_type = inline_data.get("mimeType", "")
+                data = inline_data.get("data", "")
 
-    # 4. 文本清理
-    text_content = content
-    for pattern in _CLEANUP_PATTERNS:
-        text_content = pattern.sub('', text_content)
+                if mime_type.startswith("image/") and data:
+                    try:
+                        img_bytes = base64.b64decode(data)
+                        images.append((img_bytes, None))
+                        logger.debug(f"解码 Gemini 内联图片: {len(img_bytes)} bytes, type: {mime_type}")
+                    except Exception as e:
+                        logger.warning(f"Gemini 内联图片解码失败: {e}")
 
-    text_content = _WHITESPACE_PATTERN.sub('\n', text_content)
-    text_content = _LINE_SPACES_PATTERN.sub('', text_content)
-    text_content = text_content.strip()
+            # 处理文件数据（如果有）
+            if "fileData" in part:
+                file_data = part["fileData"]
+                mime_type = file_data.get("mimeType", "")
+                file_uri = file_data.get("fileUri", "")
+
+                if mime_type.startswith("image/") and file_uri:
+                    images.append((None, file_uri))
+                    logger.debug(f"找到 Gemini 文件图片: {file_uri}, type: {mime_type}")
+
+        text_content = text_content.strip()
+
+    else:
+        # OpenAI 格式：从文本中提取 base64 和 URL
+        if not content:
+            return [], None
+
+        # 1. 先找到所有 base64 位置，但不立即解码
+        base64_positions = []
+        for match in _BASE64_PATTERN.finditer(content):
+            base64_positions.append((match.start(), match.end(), match.group(1)))
+
+        # 2. 逐个处理 base64（避免同时在内存中保存多个大图片）
+        for start, end, b64str in base64_positions:
+            try:
+                b64str = re.sub(r'\s+', '', b64str)
+                img_bytes = base64.b64decode(b64str)
+                images.append((img_bytes, None))
+                logger.debug(f"解码 base64 图片: {len(img_bytes)} bytes")
+            except Exception as e:
+                logger.warning(f"Base64 解码失败: {e}")
+
+        # 3. URL 图片处理
+        for match in _URL_PATTERN.finditer(content):
+            url = match.group(0)
+            if any(url.lower().endswith(ext) for ext in _IMAGE_EXTS):
+                images.append((None, url))
+
+        # 4. 文本清理
+        text_content = content
+        for pattern in _CLEANUP_PATTERNS:
+            text_content = pattern.sub('', text_content)
+
+        text_content = _WHITESPACE_PATTERN.sub('\n', text_content)
+        text_content = _LINE_SPACES_PATTERN.sub('', text_content)
+        text_content = text_content.strip()
 
     return images, text_content if text_content else None
+
+async def process_images_from_content(
+    image_list: List[Tuple[Optional[bytes], Optional[str]]],
+    text_content: Optional[str],
+    client: httpx.AsyncClient
+) -> List[Tuple[Optional[bytes], Optional[str], Optional[str]]]:
+    """处理从内容中提取的图片"""
+    results = []
+
+    for idx, (img_bytes, img_url) in enumerate(image_list):
+        if img_bytes:
+            # Base64 图片已解码
+            text = text_content if idx == 0 else None
+            results.append((img_bytes, None, text))
+            logger.info(f"成功解码第 {idx + 1} 张图片（Base64），大小: {len(img_bytes)} bytes")
+        elif img_url:
+            # URL 图片需要下载
+            downloaded = await download_image_from_url(img_url, client)
+            if downloaded:
+                text = text_content if idx == 0 and not results else None
+                results.append((downloaded, img_url, text))
+                logger.info(f"成功下载第 {idx + 1} 张图片（URL），大小: {len(downloaded)} bytes")
+            else:
+                # 下载失败，但保留 URL
+                text = text_content if idx == 0 and not results else None
+                results.append((None, img_url, text))
+                logger.warning(f"第 {idx + 1} 张图片下载失败，保留 URL: {img_url}")
+
+    return results
+
+def is_openai_compatible() -> bool:
+    """检测是否使用 OpenAI 兼容模式"""
+    url = plugin_config.gemini_api_url.lower()
+    return "openai" in url or "/v1/chat/completions" in url
+
+def get_valid_api_keys() -> list:
+    """获取有效的 API Keys"""
+    keys = plugin_config.gemini_api_keys
+    if not keys or (len(keys) == 1 and keys[0] == "xxxxxx"):
+        raise RuntimeError("请先在 env 中配置有效的 Gemini API Key")
+    return keys
+
+def encode_image_to_base64(image: Image.Image) -> str:
+    """将 PIL Image 编码为 base64 字符串"""
+    buf = BytesIO()
+    image.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+def build_request_config(api_key: str) -> Tuple[str, Dict[str, str], str]:
+    """构建请求配置（URL、Headers、API类型）"""
+    if is_openai_compatible():
+        url = plugin_config.gemini_api_url
+        if not url.endswith('v1/chat/completions'):
+            url = url.rstrip('/') + 'v1/chat/completions'
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+        return url, headers, "openai"
+    else:
+        # 处理 Gemini API URL，避免重复路径
+        base_url = plugin_config.gemini_api_url.rstrip('/')
+
+        # 移除可能存在的 /v1beta 后缀，然后统一添加完整路径
+        if base_url.endswith('/v1beta'):
+            base_url = base_url[:-7]
+
+        url = f"{base_url}/v1beta/models/{plugin_config.gemini_model}:generateContent?key={api_key}"
+
+        headers = {"Content-Type": "application/json"}
+
+        return url, headers, "gemini"
+
+def build_payload(api_type: str, images: list, prompt: str) -> Dict[str, Any]:
+    """根据API类型构建请求载荷"""
+    if api_type == "openai":
+        content_parts = [{"type": "text", "text": prompt}]
+
+        for img in images:
+            b64data = encode_image_to_base64(img)
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{b64data}"}
+            })
+
+        return {
+            "model": plugin_config.gemini_model,
+            "messages": [{"role": "user", "content": content_parts}]
+        }
+    else:
+        parts = [{"text": prompt}]
+
+        for img in images:
+            b64data = encode_image_to_base64(img)
+            parts.append({
+                "inlineData": {
+                    "mimeType": "image/png",
+                    "data": b64data
+                }
+            })
+
+        return {
+            "contents": [{"parts": parts}],
+            "safetySettings": [
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            ]
+        }
+
+def parse_api_response(data: Dict[str, Any], api_type: str) -> Tuple[Optional[str], Optional[List[Dict]], Optional[str]]:
+    """解析API响应，返回(content, parts, error_message)"""
+    if data.get("error"):
+        err = data["error"]
+        msg = err.get("message") if isinstance(err, dict) else str(err)
+        return None, None, f"API 返回错误: {msg}"
+
+    if api_type == "openai":
+        choices = data.get("choices", [])
+        if not choices:
+            return None, None, "返回 choices 为空"
+
+        msg = choices[0].get("message", {}) or {}
+        content = msg.get("content", "")
+        return content, None, None
+    else:
+        candidates = data.get("candidates", [])
+        if not candidates:
+            return None, None, "返回 candidates 为空"
+
+        candidate = candidates[0]
+        content_obj = candidate.get("content", {})
+        parts = content_obj.get("parts", [])
+        if not parts:
+            return None, None, "返回 parts 为空"
+
+        # 过滤掉 thought=true 的部分，只保留实际内容
+        actual_parts = [p for p in parts if not p.get("thought", False)]
+
+        if not actual_parts:
+            return None, None, "返回 parts 中没有实际内容（都是 thought）"
+
+        # 拼接所有文本内容
+        content = ""
+        for part in actual_parts:
+            text = part.get("text", "")
+            if text:
+                content += text + "\n"
+
+        content = content.strip()
+
+        return content, actual_parts, None
+
+def handle_http_error(status_code: int, response_text: str, attempt: int) -> str:
+    """处理HTTP错误"""
+    error_msg = f"HTTP {status_code}: {response_text[:200]}"
+    logger.warning(f"[Attempt {attempt}] HTTP 错误，切换 Key：{status_code}")
+    return error_msg
+
+def handle_network_error(error: Exception, attempt: int) -> Tuple[str, bool]:
+    """处理网络错误，返回(error_message, is_connection_error)"""
+    if isinstance(error, httpx.TimeoutException):
+        error_msg = f"请求超时（90秒无响应）: {error}"
+        logger.warning(f"[Attempt {attempt}] 请求超时，切换 Key：{error}")
+        return error_msg, True
+    elif isinstance(error, (httpx.ConnectError, httpx.NetworkError)):
+        error_msg = f"网络连接失败: {error}"
+        logger.warning(f"[Attempt {attempt}] 无法连接到 API，切换 Key：{error}")
+        return error_msg, True
+    else:
+        error_msg = f"未知异常: {error}"
+        logger.warning(f"[Attempt {attempt}] 发生异常，切换 Key：{error}")
+        return error_msg, False
+
+def generate_final_error_message(max_attempts: int, last_error: str, api_connection_failed: bool) -> str:
+    """生成最终的错误消息"""
+    if api_connection_failed:
+        if "超时" in last_error:
+            return (
+                f"已尝试 {max_attempts} 次，均请求超时。\n"
+                f"API 服务可能繁忙，请稍后再试。\n"
+                f"最后错误：{last_error}"
+            )
+        else:
+            return (
+                f"已尝试 {max_attempts} 次，均无法连接到 API。\n"
+                f"请检查网络连接或 API 地址配置。\n"
+                f"最后错误：{last_error}"
+            )
+    else:
+        return (
+            f"已尝试 {max_attempts} 次，仍未成功。\n"
+            f"最后错误：{last_error}"
+        )
 
 async def generate_template_images(
     images: List[Image.Image],
     prompt: Optional[str] = None
 ) -> List[Tuple[Optional[bytes], Optional[str], Optional[str]]]:
-    """
-    调用 Gemini/OpenAI 接口生成图片（支持多图输入和多图输出）
-    返回 List[(image_bytes, image_url, text_content)]
-    """
+    """调用 Gemini/OpenAI 接口生成图片"""
     global _current_api_key_idx
 
-    keys = plugin_config.gemini_api_keys
-    if not keys or (len(keys) == 1 and keys[0] == "xxxxxx"):
-        raise RuntimeError("请先在 env 中配置有效的 Gemini API Key")
-
-    if not prompt:
-        prompt = plugin_config.prompt_0
+    # 获取API Keys
+    keys = get_valid_api_keys()
 
     if not images:
         raise RuntimeError("没有传入任何图片")
 
-    # 把所有输入图片转成 base64
-    content_parts = [{"type": "text", "text": prompt}]
-    for img in images:
-        buf = BytesIO()
-        img.save(buf, format="PNG")
-        b64data = base64.b64encode(buf.getvalue()).decode()
-        content_parts.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/png;base64,{b64data}"}
-        })
-
-    url = f"{plugin_config.gemini_api_url}"
-    payload = {
-        "model": plugin_config.gemini_model,
-        "messages": [{"role": "user", "content": content_parts}],
-        "safety_settings": [
-            {
-                "category": "HARM_CATEGORY_HARASSMENT",
-                "threshold": "BLOCK_NONE"
-            },
-            {
-                "category": "HARM_CATEGORY_HATE_SPEECH",
-                "threshold": "BLOCK_NONE"
-            },
-            {
-                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                "threshold": "BLOCK_NONE"
-            },
-            {
-                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                "threshold": "BLOCK_NONE"
-            }
-        ]
-    }
-
-    # 添加 Gemini 3 配置
-    if "banana-2" in plugin_config.gemini_model.lower() or "gemini-3" in plugin_config.gemini_model.lower():
-        payload["generation_config"] = {
-            # 允许生成包含成人和儿童的图片
-            "personGeneration": "allow_all"
-        }
-
     last_err = ""
-    # 标记是否为连接失败
     api_connection_failed = False
 
     for attempt in range(1, plugin_config.max_total_attempts + 1):
+        # 选择 API Key
         idx = _current_api_key_idx % len(keys)
         key = keys[idx]
         _current_api_key_idx += 1
 
-        headers = {
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json"
-        }
-
         try:
             async with httpx.AsyncClient(timeout=90) as client:
+                # 构建请求配置
+                url, headers, api_type = build_request_config(key)
+
+                # 构建请求载荷
+                payload = build_payload(api_type, images, prompt)
+
+                # 发送请求
                 resp = await client.post(url, headers=headers, json=payload)
 
                 # 成功连接，重置标记
                 api_connection_failed = False
 
+                # 检查 HTTP 状态码
                 if resp.status_code != 200:
-                    last_err = f"HTTP {resp.status_code}: {resp.text[:200]}"
-                    logger.warning(f"[Attempt {attempt}] HTTP 错误，切换 Key：{resp.status_code}")
+                    last_err = handle_http_error(resp.status_code, resp.text, attempt)
                     await asyncio.sleep(1)
                     continue
 
+                # 解析 JSON 响应
                 try:
                     data = resp.json()
                 except Exception as e:
@@ -289,55 +480,30 @@ async def generate_template_images(
                     logger.warning(f"[Attempt {attempt}] JSON 解析失败：{e}")
                     continue
 
-                if data.get("error"):
-                    err = data["error"]
-                    msg = err.get("message") if isinstance(err, dict) else str(err)
-                    last_err = f"API 返回错误: {msg}"
-                    logger.warning(f"[Attempt {attempt}] {last_err}")
+                # 解析 API 响应内容
+                content, parts, error_msg = parse_api_response(data, api_type)
+                if error_msg:
+                    last_err = error_msg
+                    logger.warning(f"[Attempt {attempt}] {error_msg}")
                     continue
 
-                choices = data.get("choices", [])
-                if not choices:
-                    last_err = "返回 choices 为空"
-                    continue
+                # 提取图片和文本
+                image_list, text_content = extract_images_and_text(content, parts, api_type)
 
-                msg = choices[0].get("message", {}) or {}
-                content = msg.get("content", "")
-
-                if not content or not isinstance(content, str):
-                    last_err = "message.content 为空或非字符串"
-                    logger.warning(f"[Attempt {attempt}] {last_err}")
-                    continue
-
-                # 提取所有图片（base64 和 URL）以及文本
-                image_list, text_content = extract_images_and_text(content)
+                logger.info(f"提取到 {len(image_list)} 张图片")
+                logger.info(f"提取到的文本: {text_content[:100] if text_content else 'None'}")
 
                 if not image_list:
-                    last_err = "content 中未找到图片数据（base64 或 URL）"
+                    last_err = f"content 中未找到图片数据（API类型: {api_type}）"
                     logger.warning(f"[Attempt {attempt}] {last_err}")
-                    logger.debug(f"Content 内容: {content[:500]}")
+                    if api_type == "gemini":
+                        logger.debug(f"Gemini parts: {json.dumps(parts, ensure_ascii=False, indent=2)}")
+                    else:
+                        logger.debug(f"OpenAI content: {content[:500]}")
                     continue
 
-                # 处理所有图片（下载 URL 图片）
-                results = []
-                for idx, (img_bytes, img_url) in enumerate(image_list):
-                    if img_bytes:
-                        # Base64 图片已解码
-                        text = text_content if idx == 0 else None
-                        results.append((img_bytes, None, text))
-                        logger.info(f"成功解码第 {idx + 1} 张图片（Base64），大小: {len(img_bytes)} bytes")
-                    elif img_url:
-                        # URL 图片需要下载
-                        downloaded = await download_image_from_url(img_url, client)
-                        if downloaded:
-                            text = text_content if idx == 0 and not results else None
-                            results.append((downloaded, img_url, text))
-                            logger.info(f"成功下载第 {idx + 1} 张图片（URL），大小: {len(downloaded)} bytes")
-                        else:
-                            # 下载失败，但保留 URL
-                            text = text_content if idx == 0 and not results else None
-                            results.append((None, img_url, text))
-                            logger.warning(f"第 {idx + 1} 张图片下载失败，保留 URL: {img_url}")
+                # 处理所有图片
+                results = await process_images_from_content(image_list, text_content, client)
 
                 if results:
                     logger.info(f"成功解析 {len(results)} 张图片")
@@ -347,45 +513,20 @@ async def generate_template_images(
                     logger.warning(f"[Attempt {attempt}] {last_err}")
                     continue
 
-        except httpx.TimeoutException as e:
-            # 超时异常单独处理
-            api_connection_failed = True
-            last_err = f"请求超时（90秒无响应）: {e}"
-            logger.warning(f"[Attempt {attempt}] 请求超时，切换 Key：{e}")
-            await asyncio.sleep(1)
-            continue
-        except (httpx.ConnectError, httpx.NetworkError) as e:
-            # 连接失败
-            api_connection_failed = True
-            last_err = f"网络连接失败: {e}"
-            logger.warning(f"[Attempt {attempt}] 无法连接到 API，切换 Key：{e}")
-            await asyncio.sleep(1)
-            continue
         except Exception as e:
-            last_err = f"未知异常: {e}"
-            logger.warning(f"[Attempt {attempt}] 发生异常，切换 Key：{e}")
+            last_err, is_connection_error = handle_network_error(e, attempt)
+            if is_connection_error:
+                api_connection_failed = True
             await asyncio.sleep(1)
             continue
 
-    # 所有尝试失败后的错误提示
-    if api_connection_failed:
-        if "超时" in last_err:
-            raise RuntimeError(
-                f"已尝试 {plugin_config.max_total_attempts} 次，均请求超时。\n"
-                f"API 服务可能繁忙，请稍后再试。\n"
-                f"最后错误：{last_err}"
-            )
-        else:
-            raise RuntimeError(
-                f"已尝试 {plugin_config.max_total_attempts} 次，均无法连接到 API。\n"
-                f"请检查网络连接或 API 地址配置。\n"
-                f"最后错误：{last_err}"
-            )
-    else:
-        raise RuntimeError(
-            f"已尝试 {plugin_config.max_total_attempts} 次，仍未成功。\n"
-            f"最后错误：{last_err}"
-        )
+    # 生成最终错误消息
+    error_message = generate_final_error_message(
+        plugin_config.max_total_attempts,
+        last_err,
+        api_connection_failed
+    )
+    raise RuntimeError(error_message)
 
 async def forward_images(
     bot: Bot,

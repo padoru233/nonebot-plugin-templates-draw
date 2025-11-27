@@ -4,7 +4,11 @@ from typing import List
 
 class ScopedConfig(BaseModel):
 
-    gemini_api_url: str = 'https://generativelanguage.googleapis.com/v1beta/openai/'   # Gemini API Url 默认为官方完整Url（调用方式并非Gemini原生而是OpenAI格式），可以替换为 https://xxxxx.xxx/v1/chat/completions 的格式
+    gemini_api_url: str = 'https://generativelanguage.googleapis.com/v1beta'
+    '''
+    Gemini API Url 默认为官方完整 Url，可以替换为中转 https://xxxxx.xxx/v1beta
+    如果想使用 OpenAI 兼容层（不推荐），可以替换为 https://generativelanguage.googleapis.com/v1beta/openai 或者中转 https://xxxxx.xxx/v1/chat/completions
+    '''
     gemini_api_keys: List[str] = ['xxxxxx']  # Gemini API Key 需要付费key，为一个列表
     gemini_model: str = 'gemini-2.5-flash-image-preview'    # Gemini 模型 默认为 gemini-2.5-flash-image-preview
     max_total_attempts: int = 2 # 这一张图的最大尝试次数（包括首次尝试），默认2次

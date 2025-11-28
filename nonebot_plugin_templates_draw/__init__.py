@@ -26,10 +26,9 @@ from .utils import (
 )
 
 
-usage = """画图 <模板标识> [图片]/@xxx
-添加/删除模板 <模板标识> <提示词>
-模板列表
-查看模板 <模板标识>"""
+usage = """- 画图 <模板标识> [图片]/@xxx
+- 添加/删除模板 <模板标识> <提示词>
+- 查看模板 或者 查看模板 <模板标识>"""
 
 # 插件元数据
 __plugin_meta__ = PluginMetadata(
@@ -95,42 +94,45 @@ async def _(matcher: Matcher, ident: Match[str]):
     else:
         await matcher.finish(f'❌ 模板 "{ident.result}" 不存在')
 
-# 列表模板
-cmd_list = on_alconna(
-    Alconna(
-        "模板列表",
-    ),
-    aliases=["list_templates"],
-    priority=5,
-    block=True,
-)
-
-@cmd_list.handle()
-async def _(matcher: Matcher):
-    tpl = list_templates()
-    if not tpl:
-        await matcher.finish("当前没有任何模板")
-    msg = "当前模板：\n"
-    for k, v in tpl.items():
-        msg += f"- {k} : {v[:15]}...\n"
-    await matcher.finish(msg)
-
-# 查看模板详情
+# 查看模板列表
 cmd_view = on_alconna(
     Alconna(
         "查看模板",
-        Args["name", str],
+        Args["name", str, None],
     ),
-    aliases=["view_template", "模板详情"],
+    aliases={"view_template", "模板列表"},
     priority=5,
     block=True,
 )
 
+cmd_view.shortcut(
+    r"查看模板\s+(?P<name>\S+)",
+    command="查看模板",
+    arguments=["{name}"],
+    prefix=True,
+)
+
+# 添加别名的 shortcut
+cmd_view.shortcut(
+    r"模板列表\s+(?P<name>\S+)",
+    command="查看模板",
+    arguments=["{name}"],
+    prefix=True,
+)
+
 @cmd_view.handle()
-async def _(matcher: Matcher, name: str):
+async def _(matcher: Matcher, name: Optional[str]):
     tpl = list_templates()
     if not tpl:
         await matcher.finish("当前没有任何模板")
+
+    # 如果 name 为空，显示模板列表
+    if name is None:
+        msg = "当前模板：\n"
+        for k, v in tpl.items():
+            msg += f"- {k} : {v[:15]}...\n"
+        msg += "\n💡 使用 '查看模板 <模板标志>' 查看具体内容"
+        await matcher.finish(msg)
 
     # 查找模板（支持模糊匹配）
     target_name = None
@@ -160,12 +162,13 @@ async def _(matcher: Matcher, name: str):
 
     if target_content:
         # 格式化显示模板内容
-        msg = f"模板名称：{target_name}\n"
-        msg += f"模板内容：\n{target_content}"
+        msg = f"📋 模板名称：{target_name}\n"
+        msg += f"{'='*20}\n"
+        msg += f"{target_content}"
 
         # 如果内容太长，截断显示
         if len(msg) > 1900:
-            msg = msg[:1900] + "\n...(内容过长，已截断)"
+            msg = msg[:1900] + "\n\n...(内容过长，已截断)"
 
         await matcher.finish(msg)
 

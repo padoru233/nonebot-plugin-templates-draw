@@ -511,6 +511,17 @@ async def generate_template_images(
                 # 成功连接，重置标记
                 api_connection_failed = False
 
+                # 获取原始响应
+                logger.debug(f"[Attempt {attempt}] 原始响应状态码: {resp.status_code}")
+                logger.debug(f"[Attempt {attempt}] 原始响应头: {dict(resp.headers)}")
+
+                raw_response_text = resp.text
+                logger.debug(f"[Attempt {attempt}] 原始响应内容 (前1000字符): {raw_response_text[:1000]}")
+
+                # 如果响应很长，也记录完整长度
+                if len(raw_response_text) > 1000:
+                    logger.debug(f"[Attempt {attempt}] 原始响应总长度: {len(raw_response_text)} 字符")
+
                 # 检查 HTTP 状态码
                 if resp.status_code != 200:
                     last_err = handle_http_error(resp.status_code, resp.text, attempt)

@@ -22,11 +22,13 @@ from nonebot.plugin import PluginMetadata
 from .config import Config
 from .utils import (
     get_reply_id, add_template, remove_template, list_templates, get_prompt,
-    get_images_from_event, generate_template_images, forward_images
+    get_images_from_event, generate_template_images, forward_images,
+    format_template_list, format_template_content, templates_to_image, find_template
 )
 
 
-usage = """- 画图 <模板标识> [图片]/@xxx
+usage = """========命令列表========
+- 画图 <模板标识> [图片]/@xxx
 - 添加/删除模板 <模板标识> <提示词>
 - 查看模板 或者 查看模板 <模板标识>"""
 
@@ -126,51 +128,34 @@ async def _(matcher: Matcher, name: Optional[str]):
     if not tpl:
         await matcher.finish("当前没有任何模板")
 
-    # 如果 name 为空，显示模板列表
+    # 如果 name 为空，生成模板列表图片
     if name is None:
-        msg = "当前模板：\n"
-        for k, v in tpl.items():
-            msg += f"- {k} : {v[:15]}...\n"
-        msg += "\n💡 使用 '查看模板 <模板标志>' 查看具体内容"
-        await matcher.finish(msg)
+        formatted_text = format_template_list(tpl)
 
-    # 查找模板（支持模糊匹配）
-    target_name = None
-    target_content = None
+        # 先尝试生成图片
+        img_bytes = None
+        try:
+            img_bytes = await templates_to_image(tpl)
+        except Exception:
+            pass
 
-    # 精确匹配
-    if name in tpl:
-        target_name = name
-        target_content = tpl[name]
-    else:
-        # 模糊匹配
-        matches = []
-        for k, v in tpl.items():
-            if name.lower() in k.lower():
-                matches.append((k, v))
-
-        if len(matches) == 1:
-            target_name, target_content = matches[0]
-        elif len(matches) > 1:
-            msg = f"找到多个匹配的模板：\n"
-            for k, v in matches:
-                msg += f"- {k} : {v[:15]}...\n"
-            msg += "\n请使用更精确的名称"
-            await matcher.finish(msg)
+        # 图片生成失败发送文本
+        if img_bytes:
+            await matcher.finish(MessageSegment.image(img_bytes))
         else:
-            await matcher.finish(f"未找到模板：{name}")
+            await matcher.finish(formatted_text)
 
-    if target_content:
-        # 格式化显示模板内容
-        msg = f"📋 模板名称：{target_name}\n"
-        msg += f"{'='*20}\n"
-        msg += f"{target_content}"
+    else:
+        # 查找具体模板
+        try:
+            target_name, target_content = find_template(tpl, name)
+            formatted_text = format_template_content(target_name, target_content)
+        except ValueError as e:
+            # 异常情况，发送错误信息
+            await matcher.finish(str(e))
 
-        # 如果内容太长，截断显示
-        if len(msg) > 1900:
-            msg = msg[:1900] + "\n\n...(内容过长，已截断)"
-
-        await matcher.finish(msg)
+        # 正常情况，发送模板内容
+        await matcher.finish(formatted_text)
 
 # 画图命令
 cmd_draw = on_alconna(
@@ -204,12 +189,12 @@ async def _(
 ):
     # 1. 模板校验
     if template is None:
-        await matcher.finish(f"💡 请提供模板名称\n    **命令列表**\n{usage}")
+        await matcher.finish(f"💡 请提供模板名称\n{usage}")
 
     raw = template.strip().lower()
     identifier = raw.split()[0] if raw else ""
     if not identifier:
-        await matcher.finish(f"💡 模板名称不能为空\n    **命令列表**\n{usage}")
+        await matcher.finish(f"💡 模板名称不能为空\n{usage}")
 
     # 2. 从 target 抽出所有被 at 用户的 uid
     at_uids: List[str] = []
@@ -232,12 +217,12 @@ async def _(
     )
 
     if not final_images:
-        await matcher.finish(f"💡 请提供图片或@用户获取头像\n    **命令列表**\n{usage}")
+        await matcher.finish(f"💡 请提供图片或@用户获取头像\n{usage}")
 
     # 5. 获取提示词并生成
     prompt = get_prompt(identifier)
     if not prompt:
-        await matcher.finish(f"❌ 未找到模板 '{identifier}'\n    **命令列表**\n{usage}")
+        await matcher.finish(f"❌ 未找到模板 '{identifier}'\n{usage}")
 
     await matcher.send("⏳ 正在生成图片，请稍候…")
     try:

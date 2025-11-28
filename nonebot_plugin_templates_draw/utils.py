@@ -1,12 +1,8 @@
-import json
-import base64
-import asyncio
-import httpx
-import re
+import os, re, httpx, asyncio, base64, json
 from io import BytesIO
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Dict, Union
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from pydantic import ValidationError
 
 from nonebot import logger, require, get_plugin_config
@@ -15,6 +11,11 @@ require("nonebot_plugin_localstore")
 from nonebot_plugin_localstore import get_plugin_config_file
 
 from .config import Config
+
+try:
+    from importlib import resources
+except ImportError:
+    import importlib_resources as resources
 
 # 用户自定义的模板文件
 USER_PROMPT_FILE: Path    = Path(get_plugin_config_file("prompt.json"))
@@ -695,3 +696,253 @@ async def get_images_from_event(
                 images.append(avatar)
 
     return images
+
+def find_template(templates: Dict[str, str], name: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    查找模板
+    """
+    # 精确匹配
+    if name in templates:
+        return name, templates[name]
+
+    # 模糊匹配
+    matches = []
+    for k, v in templates.items():
+        if name.lower() in k.lower():
+            matches.append((k, v))
+
+    if len(matches) == 1:
+        return matches[0]
+    elif len(matches) > 1:
+        msg = f"🔍 找到 {len(matches)} 个匹配的模板：\n\n"
+        for i, (k, v) in enumerate(matches, 1):
+            preview = v[:20] + "..." if len(v) > 20 else v
+            preview = preview.replace('\n', ' ')
+            msg += f"{i}. {k}\n   预览: {preview}\n\n"
+        msg += "💡 请使用更精确的名称"
+        raise ValueError(msg)
+    else:
+        raise ValueError(f"❌ 未找到模板：{name}")
+
+def format_template_list(templates: Dict[str, str]) -> str:
+    """
+    格式化模板列表为文本
+    """
+    msg = "📋 当前模板列表\n"
+    msg += f"{'='*20}\n"
+
+    for k, v in templates.items():
+        msg += f"- {k} : {v[:15]}...\n"
+    msg += "\n💡 使用 '查看模板 <模板标志>' 查看具体内容"
+
+    return msg
+
+def format_template_content(name: str, content: str) -> str:
+    """
+    格式化单个模板内容为文本
+    """
+    msg = f"📋 模板名称：{name}\n"
+    msg += f"{'='*20}\n"
+    msg += f"{content}"
+
+    # 如果内容太长，截断显示
+    if len(msg) > 1900:
+        msg = msg[:1900] + "\n\n...(内容过长，已截断)"
+
+    return msg
+
+async def templates_to_image(templates_dict: Dict[str, str]) -> bytes:
+    """
+    将模板字典转换为图片
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        image_bytes = await loop.run_in_executor(None, _create_text_image, templates_dict)
+        return image_bytes
+    except Exception as e:
+        logger.warning(f"模板字典转图片失败: {str(e)}")
+        raise
+
+def _create_text_image(templates: Dict[str, str]) -> bytes:
+    # 加载字体
+    try:
+        with resources.path('nonebot_plugin_templates_draw.resources', 'FZMINGSTJW.TTF') as font_path:
+            if font_path.exists():
+                logger.debug(f"找到字体文件: {font_path}")
+                font_header = ImageFont.truetype(str(font_path), 24)      # 标题字体
+                font_item = ImageFont.truetype(str(font_path), 18)        # 模板名称字体
+                font_tip = ImageFont.truetype(str(font_path), 16)         # 提示和描述字体
+            else:
+                raise FileNotFoundError("字体文件不存在")
+    except Exception as e:
+        logger.debug(f"加载包内字体失败: {e}")
+        font_header = ImageFont.load_default()
+        font_item = ImageFont.load_default()
+        font_tip = ImageFont.load_default()
+
+    def calculate_text_length(text: str) -> float:
+        """计算文本长度，以中文为基准"""
+        length = 0
+        for char in text:
+            if '\u4e00' <= char <= '\u9fff':  # 中文字符
+                length += 1
+            else:  # 英文字符
+                length += 0.4
+        return length
+
+    def wrap_text(text: str, max_chars: int = 20) -> list:
+        """文本换行，按字符长度分割"""
+        lines = []
+        current_line = ""
+        current_length = 0
+
+        for char in text:
+            char_length = 1 if '\u4e00' <= char <= '\u9fff' else 0.4  # 统一使用0.4
+
+            if current_length + char_length > max_chars:
+                if current_line:
+                    lines.append(current_line)
+                    current_line = char
+                    current_length = char_length
+                else:
+                    lines.append(char)
+                    current_line = ""
+                    current_length = 0
+            else:
+                current_line += char
+                current_length += char_length
+
+        if current_line:
+            lines.append(current_line)
+
+        return lines
+
+    def calculate_item_height(name: str, content: str) -> int:
+        """计算单个模板项需要的高度"""
+        base_height = 35  # 基础高度（模板名称行）
+        line_height = 20  # 每行高度
+
+        # 计算内容预览需要的行数
+        preview = content.strip().replace("\n", " ")
+        preview_lines = wrap_text(preview, 20)  # 统一使用20
+
+        # 最多显示3行预览
+        preview_lines = preview_lines[:3]
+        if len(wrap_text(preview, 20)) > 3:  # 统一使用20
+            if len(preview_lines) == 3:
+                # 重新计算第3行的截断位置，确保加上"..."后不超出限制
+                line3_length = 0
+                truncated_line3 = ""
+                for char in preview_lines[2]:
+                    char_length = 1 if '\u4e00' <= char <= '\u9fff' else 0.4  # 统一使用0.4
+                    if line3_length + char_length + 1.5 > 20:  # 预留"..."的空间，统一使用20
+                        break
+                    truncated_line3 += char
+                    line3_length += char_length
+                preview_lines[2] = truncated_line3 + "..."
+
+        return base_height + len(preview_lines) * line_height + 10  # 额外10px边距
+
+    # 配置
+    width = 400
+    padding = 20
+    header_height = 60
+    footer_height = 50
+    item_spacing = 15
+
+    # 计算每个模板项的高度
+    item_heights = []
+    if templates:
+        for name, content in templates.items():
+            item_heights.append(calculate_item_height(name, content))
+    else:
+        item_heights = [60]  # 空模板提示的高度
+
+    # 总高度（底部多加一个padding作为白边）
+    total_item_height = sum(item_heights)
+    total_spacing = (len(item_heights) - 1) * item_spacing if len(item_heights) > 1 else 0
+    height = padding + header_height + total_item_height + total_spacing + footer_height + padding * 3  # 底部增加更多padding
+
+    # 新建画布
+    img = Image.new('RGB', (width, height), '#ffffff')
+    draw = ImageDraw.Draw(img)
+
+    y = padding
+
+    # 1. 画标题区的背景框和文字
+    header_box = [padding, y, width - padding, y + header_height]
+    draw.rectangle(header_box, fill='#e8eaf6', outline='#3f51b5', width=2)
+    title = "当前模板列表"
+
+    # 使用 textbbox 替代 textsize
+    bbox = draw.textbbox((0, 0), title, font=font_header)
+    w = bbox[2] - bbox[0]
+    h = bbox[3] - bbox[1]
+
+    draw.text(((width-w)//2, y + (header_height-h)//2),
+              title, fill='#1a237e', font=font_header)
+    y += header_height + item_spacing
+
+    # 2. 画每一条模板项的区域并填文字
+    if templates:
+        for i, (name, content) in enumerate(templates.items()):
+            item_height = item_heights[i]
+            box = [padding, y, width - padding, y + item_height]
+            draw.rectangle(box, fill='#f1f8e9', outline='#4caf50', width=1)
+
+            # 模板名称
+            name_x = padding + 8
+            name_y = y + 8
+            draw.text((name_x, name_y), f"• {name}", fill='#2e7d32', font=font_item)
+
+            # 描述 preview（支持换行）
+            preview = content.strip().replace("\n", " ")
+            preview_lines = wrap_text(preview, 20)  # 统一使用20
+            preview_lines = preview_lines[:3]  # 最多3行
+
+            if len(wrap_text(preview, 20)) > 3:  # 统一使用20
+                if len(preview_lines) == 3:
+                    # 重新计算第3行的截断位置
+                    line3_length = 0
+                    truncated_line3 = ""
+                    for char in preview_lines[2]:
+                        char_length = 1 if '\u4e00' <= char <= '\u9fff' else 0.4  # 统一使用0.4
+                        if line3_length + char_length + 1.5 > 20:  # 预留"..."的空间，统一使用20
+                            break
+                        truncated_line3 += char
+                        line3_length += char_length
+                    preview_lines[2] = truncated_line3 + "..."
+
+            # 绘制每一行预览文本
+            for j, line in enumerate(preview_lines):
+                draw.text((name_x, name_y + 25 + j * 20),
+                          line, fill='#616161', font=font_tip)
+
+            y += item_height + item_spacing
+    else:
+        # 空字典时显示提示
+        item_height = item_heights[0]
+        box = [padding, y, width - padding, y + item_height]
+        draw.rectangle(box, fill='#f5f5f5', outline='#9e9e9e', width=1)
+        draw.text((padding + 8, y + item_height//2 - 10),
+                  "暂无模板", fill='#757575', font=font_item)
+        y += item_height + item_spacing
+
+    # 3. 底部提示
+    y += 10  # 多留点空隙
+    tip = "使用 '查看模板 <模板标志>' 查看具体内容"
+    tip_box = [padding, y, width - padding, y + footer_height]
+    draw.rectangle(tip_box, fill='#fff8e1', outline='#ff9800', width=1)
+
+    # 提示文字换行处理
+    tip_lines = wrap_text(tip, 28)  # 底部提示可以稍微长一点
+    for i, line in enumerate(tip_lines):
+        draw.text((padding + 8, y + 10 + i * 22),
+                  line, fill='#f57c00', font=font_tip)
+
+    # 转为 bytes
+    from io import BytesIO
+    buf = BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return buf.getvalue()

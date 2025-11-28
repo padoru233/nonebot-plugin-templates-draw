@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nonebot-plugin-templates-draw"
-version = "1.3.5"
+version = "1.3.6"
 description = "NoneBot2 一个模板绘图插件"
 authors = ["padoru233"]
 readme = "README.md"

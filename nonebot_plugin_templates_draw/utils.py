@@ -152,7 +152,11 @@ _WHITESPACE_PATTERN = re.compile(r'\n\s*\n')
 _LINE_SPACES_PATTERN = re.compile(r'^\s+|\s+$', re.MULTILINE)
 
 
-def extract_images_and_text(content: str, parts: Optional[List[Dict]] = None, api_type: str = "openai") -> Tuple[List[Tuple[Optional[bytes], Optional[str]]], Optional[str]]:
+def extract_images_and_text(
+    content: Optional[Union[str, List]],
+    parts: Optional[List[Dict]] = None,
+    api_type: str = "openai"
+) -> Tuple[List[Tuple[Optional[bytes], Optional[str]]], Optional[str]]:
     """
     从 content 或 parts 中提取所有图片（base64 和 URL）以及文本
     支持 OpenAI 和 Gemini 两种格式
@@ -198,39 +202,75 @@ def extract_images_and_text(content: str, parts: Optional[List[Dict]] = None, ap
         text_content = text_content.strip()
 
     else:
-        # OpenAI 格式：从文本中提取 base64 和 URL
+        # OpenAI 格式处理
         if not content:
             return [], None
 
-        # 1. 先找到所有 base64 位置，但不立即解码
-        base64_positions = []
-        for match in _BASE64_PATTERN.finditer(content):
-            base64_positions.append((match.start(), match.end(), match.group(1)))
+        # 如果 content 是列表
+        if isinstance(content, list):
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
 
-        # 2. 逐个处理 base64（避免同时在内存中保存多个大图片）
-        for start, end, b64str in base64_positions:
-            try:
-                b64str = re.sub(r'\s+', '', b64str)
-                img_bytes = base64.b64decode(b64str)
-                images.append((img_bytes, None))
-                logger.debug(f"解码 base64 图片: {len(img_bytes)} bytes")
-            except Exception as e:
-                logger.warning(f"Base64 解码失败: {e}")
+                # 处理文本类型
+                if part.get("type") == "text":
+                    text_content += part.get("text", "") + "\n"
 
-        # 3. URL 图片处理
-        for match in _URL_PATTERN.finditer(content):
-            url = match.group(0)
-            if any(url.lower().endswith(ext) for ext in _IMAGE_EXTS):
-                images.append((None, url))
+                # 处理 image_url 类型
+                elif part.get("type") == "image_url":
+                    img_url = part.get("image_url", {}).get("url", "")
+                    if img_url:
+                        # 判断是 base64 还是 URL
+                        if img_url.startswith("data:image/"):
+                            # Base64 格式
+                            match = _BASE64_PATTERN.match(img_url)
+                            if match:
+                                try:
+                                    b64str = re.sub(r'\s+', '', match.group(1))
+                                    img_bytes = base64.b64decode(b64str)
+                                    images.append((img_bytes, None))
+                                    logger.debug(f"解码 structured content base64 图片: {len(img_bytes)} bytes")
+                                except Exception as e:
+                                    logger.warning(f"Structured content base64 解码失败: {e}")
+                        else:
+                            # 普通 URL
+                            images.append((None, img_url))
+                            logger.debug(f"找到 structured content URL 图片: {img_url}")
 
-        # 4. 文本清理
-        text_content = content
-        for pattern in _CLEANUP_PATTERNS:
-            text_content = pattern.sub('', text_content)
+            text_content = text_content.strip()
 
-        text_content = _WHITESPACE_PATTERN.sub('\n', text_content)
-        text_content = _LINE_SPACES_PATTERN.sub('', text_content)
-        text_content = text_content.strip()
+        # 如果 content 是字符串
+        elif isinstance(content, str):
+            # 1. 先找到所有 base64 位置，但不立即解码
+            base64_positions = []
+            for match in _BASE64_PATTERN.finditer(content):
+                base64_positions.append((match.start(), match.end(), match.group(1)))
+
+            # 2. 逐个处理 base64（避免同时在内存中保存多个大图片）
+            for start, end, b64str in base64_positions:
+                try:
+                    b64str = re.sub(r'\s+', '', b64str)
+                    img_bytes = base64.b64decode(b64str)
+                    images.append((img_bytes, None))
+                    logger.debug(f"解码字符串中的 base64 图片: {len(img_bytes)} bytes")
+                except Exception as e:
+                    logger.warning(f"字符串中的 Base64 解码失败: {e}")
+
+            # 3. URL 图片处理
+            for match in _URL_PATTERN.finditer(content):
+                url = match.group(0)
+                if any(url.lower().endswith(ext) for ext in _IMAGE_EXTS):
+                    images.append((None, url))
+                    logger.debug(f"找到字符串中的 URL 图片: {url}")
+
+            # 4. 文本清理
+            text_content = content
+            for pattern in _CLEANUP_PATTERNS:
+                text_content = pattern.sub('', text_content)
+
+            text_content = _WHITESPACE_PATTERN.sub('\n', text_content)
+            text_content = _LINE_SPACES_PATTERN.sub('', text_content)
+            text_content = text_content.strip()
 
     return images, text_content if text_content else None
 
@@ -353,8 +393,11 @@ def build_payload(api_type: str, images: list, prompt: str) -> Dict[str, Any]:
             }]
         }
 
-def parse_api_response(data: Dict[str, Any], api_type: str) -> Tuple[Optional[str], Optional[List[Dict]], Optional[str]]:
-    """解析API响应，返回(content, parts, error_message)"""
+def parse_api_response(data: Dict[str, Any], api_type: str) -> Tuple[Optional[Union[str, List]], Optional[List[Dict]], Optional[str]]:
+    """
+    解析API响应，返回(content, parts, error_message)
+    兼容OR会把图片放在 message.images 里
+    """
     if data.get("error"):
         err = data["error"]
         msg = err.get("message") if isinstance(err, dict) else str(err)
@@ -366,8 +409,35 @@ def parse_api_response(data: Dict[str, Any], api_type: str) -> Tuple[Optional[st
             return None, None, "返回 choices 为空"
 
         msg = choices[0].get("message", {}) or {}
-        content = msg.get("content", "")
+        content = msg.get("content")
+
+        # 检查是否有单独的 images 字段
+        images_field = msg.get("images")
+
+        if images_field and isinstance(images_field, list):
+            # 将 images 合并到 content 中
+            if isinstance(content, list):
+                # content 已经是列表，直接追加
+                content.extend(images_field)
+            elif isinstance(content, str):
+                # content 是字符串，转换为列表
+                content_parts = []
+                if content:  # 如果有文本内容
+                    content_parts.append({"type": "text", "text": content})
+                content_parts.extend(images_field)
+                content = content_parts
+            else:
+                # content 为空，直接使用 images
+                content = images_field
+
+            logger.debug(f"合并 message.images 到 content，共 {len(images_field)} 张图片")
+
+        # 确保 content 存在
+        if content is None:
+            return None, None, "message.content 和 message.images 都为空"
+
         return content, None, None
+
     else:
         # Gemini API 处理
 

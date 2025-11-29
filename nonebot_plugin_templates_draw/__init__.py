@@ -237,6 +237,6 @@ async def _(
         # 直接发送图片
         msg = Message()
         for img_bytes in results:
-            msg += MessageSegment.image(img_bytes)
+            msg.append(MessageSegment.image(file=img_bytes))
 
         await matcher.finish(msg)

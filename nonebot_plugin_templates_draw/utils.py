@@ -624,8 +624,8 @@ async def generate_template_images(
                 logger.info(f"提取到的文本: {text_content[:100] if text_content else 'None'}")
 
                 if not image_list:
-                    last_err = f"content 中未找到图片数据（API类型: {api_type}）"
-                    logger.warning(f"[Attempt {attempt}] {last_err}")
+                    last_err = f"返回内容为空或者未找到图片数据"
+                    logger.warning(f"[Attempt {attempt}] {last_err}（API类型: {api_type}）")
                     if api_type == "gemini":
                         logger.debug(f"Gemini parts: {json.dumps(parts, ensure_ascii=False, indent=2)}")
                     else:

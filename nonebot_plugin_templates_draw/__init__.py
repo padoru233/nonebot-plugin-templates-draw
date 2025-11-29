@@ -230,4 +230,13 @@ async def _(
     except Exception as e:
         await matcher.finish(f"❎ 生成失败：{e}")
 
-    await forward_images(bot, event, results)
+    # 根据配置决定发送方式
+    if plugin_config.send_forward_msg:
+        await forward_images(bot, event, results)
+    else:
+        # 直接发送图片
+        msg = Message()
+        for img_bytes in results:
+            msg += MessageSegment.image(img_bytes)
+
+        await matcher.finish(msg)

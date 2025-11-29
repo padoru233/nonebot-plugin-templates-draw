@@ -234,9 +234,12 @@ async def _(
     if plugin_config.send_forward_msg:
         await forward_images(bot, event, results)
     else:
-        # 直接发送图片
-        msg = Message()
-        for img_bytes in results:
-            msg.append(MessageSegment.image(file=img_bytes))
-
-        await matcher.finish(msg)
+        # 逐张发送图片
+        for i, img_bytes in enumerate(results):
+            try:
+                await matcher.send(MessageSegment.image(file=img_bytes))   
+                if i < len(results) - 1:
+                    await asyncio.sleep(1) 
+            except Exception as e:
+                pass
+        await matcher.finish()

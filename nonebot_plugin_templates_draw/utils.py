@@ -12,10 +12,6 @@ from nonebot_plugin_localstore import get_plugin_config_file
 
 from .config import Config
 
-try:
-    from importlib import resources
-except ImportError:
-    import importlib_resources as resources
 
 # 用户自定义的模板文件
 USER_PROMPT_FILE: Path    = Path(get_plugin_config_file("prompt.json"))
@@ -24,8 +20,13 @@ DEFAULT_PROMPT_FILE: Path = Path(get_plugin_config_file("default_prompt.json"))
 
 plugin_config = get_plugin_config(Config).templates_draw
 
+# 加载字体路径
+CURRENT_DIR = Path(__file__).parent
+FONT_PATH = CURRENT_DIR / "resources" / "FZMINGSTJW.TTF"
+
 # 全局轮询 idx
 _current_api_key_idx = 0
+
 
 def get_reply_id(event: GroupMessageEvent) -> Optional[int]:
     return event.reply.message_id if event.reply else None
@@ -131,21 +132,15 @@ async def download_image_from_url(url: str, client: httpx.AsyncClient) -> Option
         logger.warning(f"下载图片异常 {url}: {e}")
         return None
 
-
-# 预编译正则表达式，避免重复编译
-_BASE64_PATTERN = re.compile(r'data:image/[^;,\s]+;base64,([A-Za-z0-9+/=\s]+)')  # 允许空白字符
+_BASE64_PATTERN = re.compile(r'data:image/[^;,\s]+;base64,([A-Za-z0-9+/=\s]+)')
 _URL_PATTERN = re.compile(r'https?://[^\s\)\]"\'<>]+')
-_IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
-
-# 预编译清理文本的正则表达式
-_CLEANUP_PATTERNS = [
-    re.compile(r'data:image/[^;,\s]+;base64,[A-Za-z0-9+/=\s]+'),  # base64 图片（允许空白）
-    re.compile(r'https?://[^\s\)\]"\'<>]+'),                      # HTTP/HTTPS 链接
-    re.compile(r'!\[.*?\]\(.*?\)'),                               # ![alt](url)
-    re.compile(r'\[.*?\]\(\s*\)'),                                # [text]() 空链接
-    re.compile(r'\[下载\d*\]\(\s*\)'),                            # [下载]() 下载标记
-    re.compile(r'\[图片\d*\]\(\s*\)'),                            # [图片]() 图片标记
-    re.compile(r'\[image\d*\]\(\s*\)', re.IGNORECASE),            # [image]() 图片标记
+_IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'}
+_MARKDOWN_CLEANUP = [
+    re.compile(r'!\[.*?\]\(.*?\)'),             # ![alt](url) 完整的 Markdown 图片
+    re.compile(r'\[.*?\]\(\s*\)'),              # [text]() 空链接
+    re.compile(r'\[下载\d*\]\(\s*\)'),          # 特定标记
+    re.compile(r'\[图片\d*\]\(\s*\)'),
+    re.compile(r'\[image\d*\]\(\s*\)', re.IGNORECASE),
 ]
 
 _WHITESPACE_PATTERN = re.compile(r'\n\s*\n')
@@ -159,118 +154,97 @@ def extract_images_and_text(
 ) -> Tuple[List[Tuple[Optional[bytes], Optional[str]]], Optional[str]]:
     """
     从 content 或 parts 中提取所有图片（base64 和 URL）以及文本
-    支持 OpenAI 和 Gemini 两种格式
-    返回：([(image_bytes, image_url)], text_content)
     """
     images = []
     text_content = ""
 
-    if api_type == "gemini" and parts:
-        # Gemini 原生格式：从 parts 中提取
-        for part in parts:
-            if part.get("thought", False):
-                continue  # 跳过思考部分
+    # 处理 Base64
+    def _handle_base64_match(match):
+        try:
+            b64str = re.sub(r'\s+', '', match.group(1))
+            img_bytes = base64.b64decode(b64str)
+            images.append((img_bytes, None))
+            logger.debug(f"提取并清理 Base64 图片: {len(img_bytes)} bytes")
+            return ""  # 返回空字符串以从文本中删除
+        except Exception as e:
+            logger.warning(f"Base64 提取失败: {e}")
+            return match.group(0) # 失败则保留原样
 
-            # 处理文本
+    # 处理 URL
+    def _handle_url_match(match):
+        url = match.group(0)
+        # 检查是否为图片后缀
+        if any(url.lower().endswith(ext) for ext in _IMAGE_EXTS):
+            images.append((None, url))
+            logger.debug(f"提取并清理 URL 图片: {url}")
+            return ""  # 是图片，提取并从文本删除
+        else:
+            return url # 不是图片（如普通网页链接），保留在文本中
+
+    # --- 1. Gemini 处理逻辑 ---
+    if api_type == "gemini" and parts:
+        for part in parts:
+            if part.get("thought", False): continue
+
             if "text" in part:
                 text_content += part["text"] + "\n"
 
-            # 处理内联数据（base64 图片）
             if "inlineData" in part:
-                inline_data = part["inlineData"]
-                mime_type = inline_data.get("mimeType", "")
-                data = inline_data.get("data", "")
-
-                if mime_type.startswith("image/") and data:
+                inline = part["inlineData"]
+                if inline.get("mimeType", "").startswith("image/"):
                     try:
-                        img_bytes = base64.b64decode(data)
+                        img_bytes = base64.b64decode(inline.get("data", ""))
                         images.append((img_bytes, None))
-                        logger.debug(f"解码 Gemini 内联图片: {len(img_bytes)} bytes, type: {mime_type}")
                     except Exception as e:
-                        logger.warning(f"Gemini 内联图片解码失败: {e}")
+                        logger.warning(f"Gemini inline decode fail: {e}")
 
-            # 处理文件数据（如果有）
             if "fileData" in part:
-                file_data = part["fileData"]
-                mime_type = file_data.get("mimeType", "")
-                file_uri = file_data.get("fileUri", "")
-
-                if mime_type.startswith("image/") and file_uri:
-                    images.append((None, file_uri))
-                    logger.debug(f"找到 Gemini 文件图片: {file_uri}, type: {mime_type}")
+                fdata = part["fileData"]
+                if fdata.get("mimeType", "").startswith("image/") and fdata.get("fileUri"):
+                    images.append((None, fdata["fileUri"]))
 
         text_content = text_content.strip()
 
-    else:
-        # OpenAI 格式处理
-        if not content:
-            return [], None
+    # --- 2. OpenAI 列表格式处理 ---
+    elif isinstance(content, list):
+        for part in content:
+            if not isinstance(part, dict): continue
 
-        # 如果 content 是列表
-        if isinstance(content, list):
-            for part in content:
-                if not isinstance(part, dict):
-                    continue
+            if part.get("type") == "text":
+                text_content += part.get("text", "") + "\n"
 
-                # 处理文本类型
-                if part.get("type") == "text":
-                    text_content += part.get("text", "") + "\n"
-
-                # 处理 image_url 类型
-                elif part.get("type") == "image_url":
-                    img_url = part.get("image_url", {}).get("url", "")
-                    if img_url:
-                        # 判断是 base64 还是 URL
-                        if img_url.startswith("data:image/"):
-                            # Base64 格式
-                            match = _BASE64_PATTERN.match(img_url)
-                            if match:
-                                try:
-                                    b64str = re.sub(r'\s+', '', match.group(1))
-                                    img_bytes = base64.b64decode(b64str)
-                                    images.append((img_bytes, None))
-                                    logger.debug(f"解码 structured content base64 图片: {len(img_bytes)} bytes")
-                                except Exception as e:
-                                    logger.warning(f"Structured content base64 解码失败: {e}")
-                        else:
-                            # 普通 URL
-                            images.append((None, img_url))
-                            logger.debug(f"找到 structured content URL 图片: {img_url}")
-
-            text_content = text_content.strip()
-
-        # 如果 content 是字符串
-        elif isinstance(content, str):
-            # 1. 先找到所有 base64 位置，但不立即解码
-            base64_positions = []
-            for match in _BASE64_PATTERN.finditer(content):
-                base64_positions.append((match.start(), match.end(), match.group(1)))
-
-            # 2. 逐个处理 base64（避免同时在内存中保存多个大图片）
-            for start, end, b64str in base64_positions:
-                try:
-                    b64str = re.sub(r'\s+', '', b64str)
-                    img_bytes = base64.b64decode(b64str)
-                    images.append((img_bytes, None))
-                    logger.debug(f"解码字符串中的 base64 图片: {len(img_bytes)} bytes")
-                except Exception as e:
-                    logger.warning(f"字符串中的 Base64 解码失败: {e}")
-
-            # 3. URL 图片处理
-            for match in _URL_PATTERN.finditer(content):
-                url = match.group(0)
-                if any(url.lower().endswith(ext) for ext in _IMAGE_EXTS):
+            elif part.get("type") == "image_url":
+                url = part.get("image_url", {}).get("url", "")
+                if url.startswith("data:image/"):
+                    match = _BASE64_PATTERN.match(url)
+                    if match:
+                        try:
+                            b64str = re.sub(r'\s+', '', match.group(1))
+                            images.append((base64.b64decode(b64str), None))
+                        except Exception: pass
+                elif url:
                     images.append((None, url))
-                    logger.debug(f"找到字符串中的 URL 图片: {url}")
 
-            # 4. 文本清理
-            text_content = content
-            for pattern in _CLEANUP_PATTERNS:
-                text_content = pattern.sub('', text_content)
+        text_content = text_content.strip()
 
-            text_content = _WHITESPACE_PATTERN.sub('\n', text_content)
-            text_content = _LINE_SPACES_PATTERN.sub('', text_content)
-            text_content = text_content.strip()
+    # --- 3. 字符串混合内容处理 ---
+    elif isinstance(content, str):
+        text_content = content
+
+        # 优先提取并清理 Base64 (防止 Base64 字符串太长干扰后续正则)
+        text_content = _BASE64_PATTERN.sub(_handle_base64_match, text_content)
+
+        # 提取并清理图片 URL (保留普通链接)
+        text_content = _URL_PATTERN.sub(_handle_url_match, text_content)
+
+        # 清理 Markdown 图片标记和其他残留
+        for pattern in _MARKDOWN_CLEANUP:
+            text_content = pattern.sub('', text_content)
+
+        # 格式化空白
+        text_content = _WHITESPACE_PATTERN.sub('\n', text_content)
+        text_content = _LINE_SPACES_PATTERN.sub('', text_content)
+        text_content = text_content.strip()
 
     return images, text_content if text_content else None
 
@@ -663,49 +637,57 @@ async def forward_images(
     """
     把 results 里的多条(图片bytes, 图片url, 文本) 打包成合并转发发出。
     """
-    # 取发送者信息，给 node_custom 用
+    # 构造虚拟发送者信息
     sender = event.sender
-    sender_name = getattr(sender, "card", None) or getattr(sender, "nickname", None) or str(event.user_id)
+    sender_name = getattr(sender, "nickname", None) or getattr(sender, "card", None) or str(event.user_id)
     sender_id = str(event.user_id)
 
-    # 1. 构造每一个 node
     nodes = []
-    for idx, (img_bytes, img_url, text) in enumerate(results, start=1):
-        content = Message()
-        # 如果有 text，先加文字
-        if text:
-            content.append(text)
-        # 再加图
-        if img_bytes:
-            content.append(MessageSegment.image(file=img_bytes))
-        elif img_url:
-            content.append(MessageSegment.image(url=img_url))
-        else:
-            # 既没文字也没图，就跳过
-            continue
 
-        node = MessageSegment.node_custom(
-            user_id=sender_id,
-            nickname=sender_name,
-            content=content
-        )
-        nodes.append(node)
+    # --- 定义一个内部辅助函数，生成全兼容节点 ---
+    def _create_node(content: Message):
+        return {
+            "type": "node",
+            "data": {
+                "user_id": sender_id, "nickname": sender_name, # 标准 OneBot V11
+                "uin": sender_id,     "name": sender_name,     # 兼容 Lagrange / LLonebot
+                "content": content
+            }
+        }
+
+    # 1. 遍历结果
+    for idx, (img_bytes, img_url, text) in enumerate(results, start=1):
+
+        # --- 纯文本 ---
+        if text:
+            nodes.append(_create_node(Message(text)))
+
+        # --- 纯图片 ---
+        image_seg = None
+        if img_bytes:
+            image_seg = MessageSegment.image(file=img_bytes)
+        elif img_url:
+            image_seg = MessageSegment.image(url=img_url)
+
+        if image_seg:
+            nodes.append(_create_node(Message(image_seg)))
 
     if not nodes:
-        # 没东西就返回一条普通信息
         await bot.send(event, "⚠️ 未生成任何内容")
         return
 
-    # 2. 一次性发送合并转发
-    forward_msg = Message(nodes)
+    # 2. 发送合并转发
     try:
-        result = await bot.send(event=event, message=forward_msg)
-        logger.debug(f"[draw] 合并转发成功，forward_id: {result.get('forward_id')}")
+        await bot.call_api(
+            "send_group_forward_msg",
+            group_id=event.group_id,
+            messages=nodes
+        )
+        logger.debug(f"[draw] 合并转发成功")
+
     except Exception as e:
         logger.exception(f"[draw] 合并转发失败：{e}")
-        # 如果失败，就退回普通发送
-        for node in nodes:
-            await bot.send(event, Message(node))
+        await bot.send(event, "合并转发发送失败，请检查日志。")
 
 # —— 收图逻辑 —— #
 async def get_images_from_event(
@@ -834,16 +816,16 @@ async def templates_to_image(templates_dict: Dict[str, str]) -> bytes:
         raise
 
 def _create_text_image(templates: Dict[str, str]) -> bytes:
+
     # 加载字体
     try:
-        with resources.path('nonebot_plugin_templates_draw.resources', 'FZMINGSTJW.TTF') as font_path:
-            if font_path.exists():
-                logger.debug(f"找到字体文件: {font_path}")
-                font_header = ImageFont.truetype(str(font_path), 24)      # 标题字体
-                font_item = ImageFont.truetype(str(font_path), 18)        # 模板名称字体
-                font_tip = ImageFont.truetype(str(font_path), 16)         # 提示和描述字体
-            else:
-                raise FileNotFoundError("字体文件不存在")
+        if FONT_PATH.exists():
+            logger.debug(f"找到字体文件: {FONT_PATH}")
+            font_header = ImageFont.truetype(str(FONT_PATH), 24)
+            font_item = ImageFont.truetype(str(FONT_PATH), 18)
+            font_tip = ImageFont.truetype(str(FONT_PATH), 16)
+        else:
+            raise FileNotFoundError(f"字体文件不存在: {FONT_PATH}")
     except Exception as e:
         logger.debug(f"加载包内字体失败: {e}")
         font_header = ImageFont.load_default()

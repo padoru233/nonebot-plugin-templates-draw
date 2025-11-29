@@ -235,9 +235,17 @@ async def _(
         await forward_images(bot, event, results)
     else:
         # 逐张发送图片
-        for i, img_bytes in enumerate(results):
+        for i, (img_bytes, img_url, text) in enumerate(results):
+            msg = Message()
+            if text:
+                msg.append(str(text))
+            if img_bytes:
+                msg.append(MessageSegment.image(file=img_bytes))
+            elif img_url:
+                msg.append(MessageSegment.image(url=img_url))
+            
             try:
-                await matcher.send(MessageSegment.image(file=img_bytes))   
+                await matcher.send(msg)
                 if i < len(results) - 1:
                     await asyncio.sleep(1) 
             except Exception as e:

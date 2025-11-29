@@ -324,27 +324,47 @@ def build_request_config(api_key: str) -> Tuple[str, Dict[str, str], str]:
 
 def build_payload(api_type: str, images: list, prompt: str) -> Dict[str, Any]:
     """根据API类型构建请求载荷"""
-    if api_type == "openai":
-        content_parts = [{"type": "text", "text": prompt}]
+    # 获取解除限制提示词
+    sys_prompt = getattr(plugin_config, 'jailbreak_prompt', "")
 
+    if api_type == "openai":
+        # 构建 User 内容（包含文本和图片）
+        user_content_parts = [{"type": "text", "text": prompt}]
         for img in images:
             b64data = encode_image_to_base64(img)
-            content_parts.append({
+            user_content_parts.append({
                 "type": "image_url",
                 "image_url": {"url": f"data:image/png;base64,{b64data}"}
             })
 
+        # 构建消息列表
+        messages = []
+
+        # 添加为 assistant 角色
+        if sys_prompt:
+            messages.append({
+                "role": "assistant",
+                "content": sys_prompt
+            })
+
+        # 添加 User 消息
+        messages.append({
+            "role": "user",
+            "content": user_content_parts
+        })
+
         return {
             "model": plugin_config.gemini_model,
-            "messages": [{"role": "user", "content": content_parts}]
+            "messages": messages
         }
+
     else:
         # Gemini API格式
-        parts = [{"text": prompt}]
+        user_parts = [{"text": prompt}]
 
         for img in images:
             b64data = encode_image_to_base64(img)
-            parts.append({
+            user_parts.append({
                 "inlineData": {
                     "mimeType": "image/png",
                     "data": b64data
@@ -352,20 +372,29 @@ def build_payload(api_type: str, images: list, prompt: str) -> Dict[str, Any]:
             })
 
         # 安全设置
-        safety_settings = [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_CIVIC_INTEGRITY", "threshold": "BLOCK_NONE"}
-        ]
-
-        return {
-            "safetySettings": safety_settings,
+        payload = {
             "contents": [{
-                "parts": parts
-            }]
+                "parts": user_parts
+            }],
+            # 如果有其他生成配置(temperature等)，通常放在 generationConfig 字段
+            # "generationConfig": { ... },
+            "safetySettings": [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "OFF"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "OFF"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "OFF"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "OFF"},
+                {"category": "HARM_CATEGORY_CIVIC_INTEGRITY", "threshold": "BLOCK_NONE"}
+            ]
         }
+
+        if sys_prompt:
+            payload["systemInstruction"] = {
+                "parts": [
+                    {"text": sys_prompt}
+                ]
+            }
+
+        return payload
 
 def parse_api_response(data: Dict[str, Any], api_type: str) -> Tuple[Optional[Union[str, List]], Optional[List[Dict]], Optional[str]]:
     """

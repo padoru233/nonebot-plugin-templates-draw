@@ -82,7 +82,8 @@ _✨ NoneBot2 一个模板绘图插件 ✨_
 | TEMPLATES_DRAW__JAILBREAK_PROMPT | 否 | - | 看下方注释 |
 
 - Gemini API Url 默认为官方完整 Url，可以替换为中转 https://xxxxx.xxx/v1beta 如果想使用 OpenAI 兼容层（不推荐），可以替换为 https://generativelanguage.googleapis.com/v1beta/openai 或者中转 https://xxxxx.xxx/v1/chat/completions
-- 默认使用了很长的文本破限词，如果破限效果不好或者花费太高可以自定义JAILBREAK_PROMPT
+- ~~~默认使用了很长的文本破限词，如果破限效果不好或者花费太高可以自定义JAILBREAK_PROMPT~~~
+- 放弃了JAILBREAK_PROMPT，使用上下文破限
 
 ### 推荐API
 

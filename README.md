@@ -116,3 +116,5 @@ _✨ NoneBot2 一个模板绘图插件 ✨_
 
 ## 鸣谢
 感谢真寻以及真寻群友提供的灵感
+
+[![:name](https://count.getloli.com/@:nonebot-plugin-templates-draw?theme=gelbooru)](https://count.getloli.com/@nonebot-plugin-templates-draw?name=nonebot-plugin-templates-draw&theme=booru-qualityhentais&padding=7&offset=0&align=center&scale=1&pixelated=1&darkmode=auto)

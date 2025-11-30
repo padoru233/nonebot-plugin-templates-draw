@@ -340,10 +340,10 @@ def build_payload(api_type: str, images: list, prompt: str) -> Dict[str, Any]:
         # 构建消息列表
         messages = []
 
-        # 添加为 assistant 角色
+        # 添加为 system 角色
         if sys_prompt:
             messages.append({
-                "role": "assistant",
+                "role": "system",
                 "content": sys_prompt
             })
 
@@ -516,7 +516,7 @@ def handle_http_error(status_code: int, response_text: str, attempt: int) -> str
 def handle_network_error(error: Exception, attempt: int) -> Tuple[str, bool]:
     """处理网络错误，返回(error_message, is_connection_error)"""
     if isinstance(error, httpx.TimeoutException):
-        error_msg = f"请求超时（120秒无响应）: {error}"
+        error_msg = f"请求超时（90秒无响应）: {error}"
         logger.warning(f"[Attempt {attempt}] 请求超时，切换 Key：{error}")
         return error_msg, True
     elif isinstance(error, (httpx.ConnectError, httpx.NetworkError)):
@@ -572,7 +572,7 @@ async def generate_template_images(
         _current_api_key_idx += 1
 
         try:
-            async with httpx.AsyncClient(timeout=120) as client:
+            async with httpx.AsyncClient(timeout=90) as client:
                 # 构建请求配置
                 url, headers, api_type = build_request_config(key)
 

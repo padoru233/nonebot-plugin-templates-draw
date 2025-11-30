@@ -477,9 +477,9 @@ def parse_api_response(data: Dict[str, Any], api_type: str) -> Tuple[Optional[Un
         finish_reason = candidate.get("finishReason")
         if finish_reason in ["SAFETY", "RECITATION", "PROHIBITED_CONTENT"]:
             finish_reason_map = {
-                "SAFETY": "响应因安全原因被屏蔽",
-                "RECITATION": "响应因引用原因被屏蔽",
-                "PROHIBITED_CONTENT": "响应包含被禁止的内容"
+                "SAFETY": "因安全原因被屏蔽",
+                "RECITATION": "因引用原因被屏蔽",
+                "PROHIBITED_CONTENT": "包含被禁止的内容"
             }
             readable_reason = finish_reason_map.get(finish_reason, f"响应被屏蔽：{finish_reason}")
             return None, None, f"响应被屏蔽: {readable_reason}"

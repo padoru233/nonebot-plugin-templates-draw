@@ -435,6 +435,9 @@ async def generate_template_images(
                     await asyncio.sleep(1)
                     continue
 
+                raw_response_text = resp.text
+                logger.debug(f"[Attempt {attempt}] 原始响应内容 (前1000字符): {raw_response_text[:1000]}")
+
                 try:
                     data = resp.json()
                 except Exception as e:
@@ -448,13 +451,16 @@ async def generate_template_images(
 
                 image_list, text_content = extract_images_and_text(content, parts, api_type)
 
+                logger.info(f"提取到 {len(image_list)} 张图片")
+                logger.info(f"提取到的文本: {text_content[:100] if text_content else 'None'}")
+
                 if not image_list:
                     last_err = "未找到图片数据"
                     continue
 
                 results = await process_images_from_content(image_list, text_content, client)
                 if results:
-                    logger.info(f"成功生成 {len(results)} 张图片")
+                    logger.info(f"成功解析 {len(results)} 张图片")
                     return results
                 else:
                     last_err = "图片解析/下载失败"

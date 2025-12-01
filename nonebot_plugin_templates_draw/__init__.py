@@ -22,9 +22,10 @@ from nonebot.plugin import PluginMetadata
 from .config import Config
 from .utils import (
     get_reply_id, add_template, remove_template, list_templates, get_prompt,
-    get_images_from_event, generate_template_images, forward_images,
+    get_images_from_event, forward_images,
     format_template_list, format_template_content, templates_to_image, find_template
 )
+from .api_handler import generate_template_images
 
 
 usage = """========命令列表========

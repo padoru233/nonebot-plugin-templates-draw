@@ -1,9 +1,17 @@
-import os, re, httpx, asyncio, base64, json
+import os, re, httpx, asyncio, base64, json, html
 from io import BytesIO
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Dict, Union
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import ValidationError
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import Paragraph, Frame
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
+from reportlab.lib.utils import ImageReader
 
 from nonebot import logger, require, get_plugin_config
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment, GroupMessageEvent
@@ -498,3 +506,123 @@ def _create_text_image(templates: Dict[str, str]) -> bytes:
     img.save(buf, format='PNG')
     buf.seek(0)
     return buf.getvalue()
+
+def build_pdf_from_prompt_and_images(prompt: str, images: List[Image.Image]) -> bytes:
+    """
+    将提示词和多个 PIL Image 对象合并为一个 PDF 文件。
+    """
+    if not prompt and not images:
+        raise ValueError("提示词和图片不能都为空")
+
+    pdf_buffer = BytesIO()
+    c = canvas.Canvas(pdf_buffer, pagesize=A4)
+    page_width, page_height = A4
+
+    # --- 字体配置 ---
+    font_name = 'Helvetica'  # 默认字体，防止加载失败时变量未定义
+    try:
+        # 检测 FONT_PATH 是否存在 (假设 FONT_PATH 是 pathlib.Path 对象)
+        if hasattr(globals().get('FONT_PATH'), 'exists') and FONT_PATH.exists():
+            # 注册中文字体
+            font_key = 'CustomChinese'
+            # 避免重复注册报错
+            if font_key not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont(font_key, str(FONT_PATH)))
+            font_name = font_key
+            logger.debug(f"PDF构建: 成功加载字体 {FONT_PATH}")
+        else:
+            logger.debug("PDF构建: 字体路径无效或未定义，使用默认字体 (中文可能乱码)")
+    except Exception as e:
+        logger.error(f"PDF构建: 加载字体失败: {e}，使用默认字体")
+
+    # --- 第一页：Prompt ---
+    if prompt:
+        # 1. 标题
+        c.setFont(font_name, 16)
+        c.drawString(40, page_height - 50, "Prompt:")
+
+        # 2. 内容样式
+        style = ParagraphStyle(
+            'CustomStyle',
+            fontName=font_name,
+            fontSize=12,
+            leading=18, # 行间距稍微加大，更易阅读
+            alignment=TA_LEFT,
+            wordWrap='CJK' # 支持中文换行
+        )
+
+        # 3. 修复转义逻辑：先转义特殊字符，再转换换行符
+        # 使用 html.escape 自动处理 & < > 等符号，避免手动 replace 出错
+        safe_prompt = html.escape(prompt).replace('\n', '<br/>')
+
+        para = Paragraph(safe_prompt, style)
+
+        # 4. 创建 Frame (扩大显示区域)
+        margin = 40
+        frame = Frame(
+            margin, margin,                  # x, y (从底部开始)
+            page_width - 2 * margin,         # 宽
+            page_height - 100,               # 高 (顶部留出标题空间)
+            showBoundary=0
+        )
+
+        # 5. 绘制
+        # 注意：如果内容超过一页，Frame 不会自动分页。
+        # 这里假设 Prompt 不会超级长，如果很长需要用 SimpleDocTemplate
+        frame.addFromList([para], c)
+        c.showPage()
+
+    # --- 后续页面：Images ---
+    # 配置参数
+    margin = 20           # 左右边距 (像素)
+    bottom_text_area = 50 # 底部留给文字的高度
+    top_margin = 20       # 顶部边距
+
+    for idx, img in enumerate(images):
+        # 1. 计算图片最大可用区域
+        available_width = page_width - (margin * 2)
+        available_height = page_height - top_margin - bottom_text_area
+
+        img_width, img_height = img.size
+
+        # 2. 计算缩放比例 (保持纵横比，contain 模式)
+        scale_w = available_width / img_width
+        scale_h = available_height / img_height
+        scale = min(scale_w, scale_h) # 取最小值，确保完整放入
+
+        new_width = img_width * scale
+        new_height = img_height * scale
+
+        # 3. 计算居中位置
+        # x: 页面中心 - 图片一半宽
+        x = (page_width - new_width) / 2
+
+        # y: 底部文字区域上方 + (可用垂直空间中心 - 图片一半高)
+        # 这样确保了图片永远位于 bottom_text_area 之上
+        y = bottom_text_area + (available_height - new_height) / 2
+
+        # 4. 绘制图片
+        img_reader = ImageReader(img)
+        c.drawImage(img_reader, x, y, width=new_width, height=new_height)
+
+        # 5. 绘制底部文字
+        c.setFont(font_name, 10)
+        page_number_text = f"Reference Image {idx + 1} / {len(images)}"
+
+        # 使用 drawCentredString 简化居中计算
+        # 文字位置固定在底部区域的中间 (例如高度30的位置)
+        text_y_position = 30
+        c.drawCentredString(page_width / 2, text_y_position, page_number_text)
+
+        c.showPage()
+
+    c.save()
+    pdf_bytes = pdf_buffer.getvalue()
+    pdf_buffer.close()
+
+    logger.debug(f"PDF构建完成: {len(pdf_bytes)} bytes")
+    return pdf_bytes
+
+def encode_pdf_to_base64(pdf_bytes: bytes) -> str:
+    """将 PDF 字节数据编码为 base64 字符串"""
+    return base64.b64encode(pdf_bytes).decode()

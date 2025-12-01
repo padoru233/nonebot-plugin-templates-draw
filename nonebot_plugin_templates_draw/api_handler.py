@@ -8,8 +8,7 @@ from nonebot import logger, get_plugin_config
 from .config import Config
 from .utils import (
     download_image_from_url,
-    build_pdf_from_prompt_and_images,
-    encode_pdf_to_base64
+    build_pdf_from_prompt_and_images
 )
 
 plugin_config = get_plugin_config(Config).templates_draw
@@ -223,7 +222,7 @@ def build_payload(
             # PDF 模式：将 prompt + 图片构建为 PDF
             logger.info("使用 PDF 模式发送（prompt + 参考图）")
             pdf_bytes = build_pdf_from_prompt_and_images(prompt, images)
-            pdf_b64 = encode_pdf_to_base64(pdf_bytes)
+            pdf_b64 = base64.b64encode(pdf_bytes).decode()
 
             parts = [
                 {

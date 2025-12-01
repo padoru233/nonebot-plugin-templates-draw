@@ -1,4 +1,4 @@
-import os, re, httpx, asyncio, base64, json, html
+import os, re, httpx, asyncio, base64, json, html, uuid
 from io import BytesIO
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Dict, Union
@@ -16,7 +16,7 @@ from reportlab.lib.utils import ImageReader
 from nonebot import logger, require, get_plugin_config
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment, GroupMessageEvent
 require("nonebot_plugin_localstore")
-from nonebot_plugin_localstore import get_plugin_config_file
+from nonebot_plugin_localstore import get_plugin_config_file, get_plugin_cache_dir
 
 from .config import Config
 
@@ -25,6 +25,8 @@ from .config import Config
 USER_PROMPT_FILE: Path = Path(get_plugin_config_file("prompt.json"))
 # 存放默认模板的文件，每次启动都重写
 DEFAULT_PROMPT_FILE: Path = Path(get_plugin_config_file("default_prompt.json"))
+# 生成 PDF 的缓存路径
+PDF_CACHE_DIR: Path = Path(get_plugin_cache_dir())
 
 plugin_config = get_plugin_config(Config).templates_draw
 
@@ -620,9 +622,21 @@ def build_pdf_from_prompt_and_images(prompt: str, images: List[Image.Image]) -> 
     pdf_bytes = pdf_buffer.getvalue()
     pdf_buffer.close()
 
-    logger.debug(f"PDF构建完成: {len(pdf_bytes)} bytes")
-    return pdf_bytes
+    # 保存到文件
+    try:
+        if not PDF_CACHE_DIR.exists():
+            PDF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-def encode_pdf_to_base64(pdf_bytes: bytes) -> str:
-    """将 PDF 字节数据编码为 base64 字符串"""
-    return base64.b64encode(pdf_bytes).decode()
+        filename = f"{uuid.uuid4().hex}.pdf"
+        file_path = PDF_CACHE_DIR / filename
+
+        with open(file_path, "wb") as f:
+            f.write(pdf_bytes)
+
+        logger.info(f"PDF构建成功并保存: {file_path} ({len(pdf_bytes)} bytes)")
+
+    except Exception as e:
+        logger.error(f"PDF保存失败: {e}")
+        raise e
+
+    return pdf_bytes

@@ -32,7 +32,8 @@ plugin_config = get_plugin_config(Config).templates_draw
 
 # 加载字体路径
 CURRENT_DIR = Path(__file__).parent
-FONT_PATH = CURRENT_DIR / "resources" / "FZMINGSTJW.TTF"
+IMG_FONT_PATH = CURRENT_DIR / "resources" / "FZMINGSTJW.TTF"
+PDF_FONT_PATH = CURRENT_DIR / "resources" / "fangsong_GB2312.ttf"
 
 
 async def download_image_from_url(url: str, client: httpx.AsyncClient) -> Optional[bytes]:
@@ -329,13 +330,13 @@ def _create_text_image(templates: Dict[str, str]) -> bytes:
 
     # 加载字体
     try:
-        if FONT_PATH.exists():
-            logger.debug(f"找到字体文件: {FONT_PATH}")
-            font_header = ImageFont.truetype(str(FONT_PATH), 24)
-            font_item = ImageFont.truetype(str(FONT_PATH), 18)
-            font_tip = ImageFont.truetype(str(FONT_PATH), 16)
+        if IMG_FONT_PATH.exists():
+            logger.debug(f"找到字体文件: {IMG_FONT_PATH}")
+            font_header = ImageFont.truetype(str(IMG_FONT_PATH), 24)
+            font_item = ImageFont.truetype(str(IMG_FONT_PATH), 18)
+            font_tip = ImageFont.truetype(str(IMG_FONT_PATH), 16)
         else:
-            raise FileNotFoundError(f"字体文件不存在: {FONT_PATH}")
+            raise FileNotFoundError(f"字体文件不存在: {IMG_FONT_PATH}")
     except Exception as e:
         logger.debug(f"加载包内字体失败: {e}")
         font_header = ImageFont.load_default()
@@ -523,15 +524,15 @@ def build_pdf_from_prompt_and_images(prompt: str, images: List[Image.Image]) -> 
     # --- 字体配置 ---
     font_name = 'Helvetica'  # 默认字体，防止加载失败时变量未定义
     try:
-        # 检测 FONT_PATH 是否存在 (假设 FONT_PATH 是 pathlib.Path 对象)
-        if hasattr(globals().get('FONT_PATH'), 'exists') and FONT_PATH.exists():
+        # 检测 PDF_FONT_PATH 是否存在
+        if hasattr(globals().get('PDF_FONT_PATH'), 'exists') and PDF_FONT_PATH.exists():
             # 注册中文字体
             font_key = 'CustomChinese'
             # 避免重复注册报错
             if font_key not in pdfmetrics.getRegisteredFontNames():
-                pdfmetrics.registerFont(TTFont(font_key, str(FONT_PATH)))
+                pdfmetrics.registerFont(TTFont(font_key, str(PDF_FONT_PATH)))
             font_name = font_key
-            logger.debug(f"PDF构建: 成功加载字体 {FONT_PATH}")
+            logger.debug(f"PDF构建: 成功加载字体 {PDF_FONT_PATH}")
         else:
             logger.debug("PDF构建: 字体路径无效或未定义，使用默认字体 (中文可能乱码)")
     except Exception as e:

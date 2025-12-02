@@ -78,15 +78,15 @@ _✨ NoneBot2 一个模板绘图插件 ✨_
 |:-----:|:----:|:----:|:----:|
 | TEMPLATES_DRAW__GEMINI_API_URL | 是 | - | 看下方注释 |
 | TEMPLATES_DRAW__GEMINI_API_KEYS | 是 | ["xxxxxx"] | 需要付费key，填入你的多个API Key，例如 ['key1', 'key2', 'key3'] |
-| TEMPLATES_DRAW__GEMINI_MODEL | 否 | gemini-2.5-flash-image-preview | Gemini 模型 默认为 gemini-2.5-flash-image-preview |
-| TEMPLATES_DRAW__MAX_TOTAL_ATTEMPTS | 否 | 2 | 这一张图的最大尝试次数（包括首次尝试），默认2次，建议不小于Key数量，保证每个Key至少轮到1次 |
+| TEMPLATES_DRAW__GEMINI_MODEL | 否 | gemini-2.5-flash-image-preview | Gemini 绘图模型 |
+| TEMPLATES_DRAW__MAX_TOTAL_ATTEMPTS | 否 | 2 | 这一张图的最大尝试次数（包括首次尝试） |
 | TEMPLATES_DRAW__SEND_FORWARD_MSG | 否 | True | 使用合并转发来发图，默认开启 |
 | TEMPLATES_DRAW__GEMINI_PDF_JAILBREAK | 否 | True | 看下方注释 |
 
 - Gemini API Url 默认为官方完整 Url `https://generativelanguage.googleapis.com/v1beta`，可以替换为中转 `https://xxxxx.xxx/v1beta` 如果想使用 OpenAI 兼容层（不推荐），可以替换为 `https://generativelanguage.googleapis.com/v1beta/openai` 或者中转 `https://xxxxx.xxx/v1/chat/completions`
 - ~~默认使用了很长的文本破限词，如果破限效果不好或者花费太高可以自定义JAILBREAK_PROMPT~~
 - ~~放弃了JAILBREAK_PROMPT，使用请求模型JAILBREAK_MODEL上下文破限，默认为 `gemini-2.0-flash-lite`~~
-- PDF_JAILBREAK 发送pdf略微绕开限制
+- GEMINI_PDF_JAILBREAK 发送pdf略微绕开限制
 
 ### 推荐API
 

@@ -415,7 +415,7 @@ def _create_text_image(templates: Dict[str, str]) -> bytes:
     width = 400
     padding = 20
     header_height = 60
-    footer_height = 50
+    footer_height = 140
     item_spacing = 15
 
     # 计算每个模板项的高度
@@ -499,18 +499,21 @@ def _create_text_image(templates: Dict[str, str]) -> bytes:
     # 3. 底部提示
     y += 10  # 多留点空隙
     tip = """使用 '查看模板 <模板标志>' 查看具体内容
-命令列表:
+命令列表：
 - 画图 <模板标识> [图片]/@xxx
 - 添加/删除模板 <模板标识> <提示词>
 - 查看模板 或者 查看模板 <模板标识>"""
+
+    tip_lines = tip.split('\n')  # 直接按换行符分割
+    line_height = 24  # 行高
+
     tip_box = [padding, y, width - padding, y + footer_height]
     draw.rectangle(tip_box, fill='#fff8e1', outline='#ff9800', width=1)
 
-    # 提示文字换行处理
-    tip_lines = wrap_text(tip, 28)  # 底部提示可以稍微长一点
+    # 绘制每一行
     for i, line in enumerate(tip_lines):
-        draw.text((padding + 8, y + 10 + i * 22),
-                  line, fill='#f57c00', font=font_tip)
+        draw.text((padding + 8, y + 10 + i * line_height),
+                line, fill='#f57c00', font=font_tip)
 
     # 转为 bytes
     from io import BytesIO

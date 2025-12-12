@@ -114,8 +114,10 @@ _✨ NoneBot2 一个模板绘图插件 ✨_
 | 添加/删除模板 | 群员 | 是 | 群聊 | 格式：添加模板 <模板标识> <提示词> |
 
 - 默认提示词已经写入config，不可修改，可以通过用户模板覆盖同名模板
+- 参考提示词网站：https://bgp.928100.xyz https://labnana.com/zh/explore
 
 ## 鸣谢
 感谢真寻以及真寻群友提供的灵感
+感谢大橘以及大橘群友提供的灵感
 
 [![:name](https://count.getloli.com/@:nonebot-plugin-templates-draw?theme=gelbooru)](https://count.getloli.com/@nonebot-plugin-templates-draw?name=nonebot-plugin-templates-draw&theme=booru-qualityhentais&padding=7&offset=0&align=center&scale=1&pixelated=1&darkmode=auto)

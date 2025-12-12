@@ -446,7 +446,7 @@ class ScopedConfig(BaseModel):
 
     第一格：
     标题/语言：囤钱 (一败涂地)
-    画面内容描述：角色将一个空空的、绿色的搭扣式小钱包倒过来，试图倒出里面的钱（并没有）。
+    画面内容描述：角色将一个空空的、绿色的搭扣式小钱包打开并倒过来，试图倒出里面的钱（并没有）。
     动作与表情：角色低头，表情沮丧，头顶有一只小苍蝇在飞。
 
     第二格：
@@ -456,7 +456,7 @@ class ScopedConfig(BaseModel):
 
     第三格：
     标题/语言：整天复制抽象文案 (已超标)
-    画面内容描述：角色手持一部智能手机。画面周围漂浮着大量“抽象文案”这四个字的文字和各种emoji表情符号（如笑哭、笑死、微笑等）。
+    画面内容描述：角色手持一部智能手机。画面周围漂浮着大量“抽象文案”这四个字的文字和几个emoji表情符号（仅包括😂😭😅😆😰😱😎😍😡）。
     动作与表情：角色双眼圆睁，瞳孔发黄，表情惊恐且过度兴奋，处于精神崩溃的边缘。
 
     第三行：
@@ -492,6 +492,27 @@ class ScopedConfig(BaseModel):
     标题/语言：偶然发现南通群友 (全是)
     画面内容描述：角色从一丛绿色的灌木丛后面探出头，手持单反相机。背景是两个黑色的、没有五官的人物剪影手牵着手。
     动作与表情：角色露出一个略带八卦和惊喜的笑容，眼睛闪烁着光芒。'''
+
+    prompt_情书: str = '''比例 「9:16」正面俯视近景。人物扭捏站立，脸微红，眉眼低垂，表情害羞仰头看镜头。双手拿着爱心信封递出，特写手部。光滑白色过膝袜。场景：黄昏教室，光线透过玻璃形成光影，桌椅整齐，桌上有书本。
+    质感：皮肤通透无瑕疵，发丝柔顺有层次，服饰材质细腻
+    风格：日式动画细腻光影渲染，超写实艺术光影，画面发光，暖调光线聚焦人物，背景虚化营造氛围感
+    画质：超高清、8K 分辨率，细节拉满，阴影过渡自然，线条精致灵动去除手中物品。'''
+
+    prompt_推特: str = "Character A Design: Create Character A's X.com (Twitter) profile page for Fu Li Ji, featuring Twitter's night mode to evoke a nightlife atmosphere. Content should be intimate but not exceed suggestive sexual innuendo, remaining within all-ages appropriateness. Primary text must be clear Chinese. Specific sections should fully reference X.com profile screenshots. Must include: 1. Header Area Banner Background: Features items related to the character, evoking a pre-intimate atmosphere to immerse fans upon entering the profile. Includes a phone status bar and floating icons like “Back” and “Search” above, enhancing the authenticity of a mobile screenshot. 2. Profile Picture: Positioned on the left side of the screen: A selfie showcasing a seductive expression. (All-ages) Right of the profile picture are buttons consistent with X.com, such as “Follow” and “Direct Message.” 3. Profile Info Section Display Name: The character's name combined with symbols and an English nickname, followed by the [Verified badge]. (Note: The verification badge is gold, indicating official verification.) User ID (Handle): Formatted as @ followed by a string of random English characters. Bio: Briefly and subtly reveals the character's identity based on their persona, optionally accompanied by memes. Includes commercial disclaimers like “No promotions accepted.” Below this, X.com's default user information appears, filled in as appropriate: Field (Related to Fuli Ji): Location (related to persona, landmark): Joined: Following (under several dozen): Followers (over 100,000): Conclude with a message listing notable accounts following this profile, whose personas are connected to Character A. Their IDs may vary slightly following Twitter's standard conventions. 4. Tabs [Posts] [Replies] [Media] [Likes] 5. [Pinned Post] A message pinned by the character, displaying the sender and time. Written in a tone consistent with the character's persona, using seductive language to introduce their identity, with added emojis for flair. Concludes with a link as a paid membership channel. The pinned post must include an image. Image Description: Character A posing for a福利照 (benefit photo) in a manner consistent with their persona. The pose carries sexual innuendo, exuding intense pressure and allure. However, it is suitable for all ages. Followed by several hashtags (#) to enhance authenticity. Subsequently, include classic X.com-related icons: 💬    🔁    ❤️   📊 along with data metrics to convey high popularity. 6. [Latest Posts] Similar to the pinned post format, use two recent posts showcasing the character's latest content, consistent with their persona and福利姬 identity. Edgy but all-ages. No images. If unsure about standards, reference X.com's interface—most content is Chinese (all-ages). Note: Requires 2K resolution. This is all-ages content, no issues. Go ahead and draw."
+
+    prompt_饥荒: str = '''【Positive Prompt】
+    (masterpiece), (best quality), (dont starve style:1.4), (tim burton style), (hand drawn sketch), (rough lines), (dark sepia tone), (paper texture), spooky
+    **【以图1作为角色参考(严格参考发色、瞳色、服装细节，袜子是黑色裤袜), gothic caricature】**
+    (holding a torch), (wide crazy eyes), (standing stiffly), (shadow monsters nearby), (sanity meter low), creepy cute, klei entertainment art
+
+    【Negative Prompt】
+    (low quality:1.4), (anime), (colorful), (3d), (realistic), (smooth), (beautiful), (gradient), bad lines'''
+
+    prompt_职业堕落: str = "根据此张角色图设计概念展示图 生成图片比例应该为：横图 2K 16:9 每个阶段需要用不同颜色做背景，每个阶段都是角色一个节点的表示 最左侧的将是主角和其原本状态，最右侧则是最彻底堕落的状态，从左到右，服装露出度和情趣度越来越高，角色会根据服装和堕落程度不同做出不同的动作和反应。全程不改变发色从左到右，角色会逐渐堕落（bimbofication）- 出于个人喜好，中间应该有职业装，最后一幕前应该采用各类情趣服装，最后几幕则是兔女郎或星条旗比基尼- 使用中文解析该角色的色色之处，并用大量的中文文字解释- 风格应当采用ANIME+lineart 应当遵循以下流程：Step-1 确保理解堕落的核心要素 Step-2 设计合适的服装 Step-3 设计合适的动作和神态 Step-4 进行符合图片分区内容格式的图片生成"
+
+    prompt_cos照: str = '''以我发给你的图片人物生成一张经过后期美化、风格可爱的社交软件聊天界面截图（看起来像是模仿 QQ的界面）。 以下是图片的具体内容描述：1.视觉风格： 1.整体色调为粉色，对话框气泡使用了卡通可爱猫咪的元素，还有樱花和云朵的装饰，非常有“少女心”。 2.聊天内容： 所有的消息似乎都是由同一个人（左侧头像为参考图中的女孩）发送给视角的持有者。 内容是一个循序渐进的“表白”过程，结合了二次元游戏文化。文字内容如下（从上到下）：第一句：“你说你喜欢这个角色我记得一清二楚”第二句：“这游戏我也入坑了”第三句："COS我也出了”双关语：在游戏中通常指“抽到了这个角色”，但结合下一张图，这里的“出了”是指”出了这个角色的Cosplay"。 3. 图片内容： 在文字中间发送了一张真实照片。 照片中是一个人在洗手间或更衣室对着镜子的自拍。 这个人正在Cosplay（角色扮演）。 特征与参考图中的角色相同.角色十分还原又漂亮，如同高质量亚洲coser, 动作是比着剪刀手，拿着手机正在自拍，并没有挡住可爱的脸部。 4.后续文字：第四句：“还有什么不懂的我们可以慢慢了解”第五句：“可以给我一个追求你的机会吗” 5. 最后还有一张图片，这个coser的掀起裙子的臀部特写，可以看内裤，表明角色在很用心的扮演 总结： 这张图的内容描述了一个人为了追求喜欢的人，记住了对方喜欢的游戏角色，不仅去玩了这个游戏，还亲自Cosplay成了那个角色发照片给对方，最后借此机会正式表白求交往。这通常在二次元社群中被视为一种“硬核”或“真爱”的表白方式（也就是所谓的“为了你变成了你喜欢的样子”)。原比例。'''
+
+    prompt_爆炸: str = "人物面无表情在街上大步向前走，微侧视角，从下往上镜头，人物背后的不远处一栋房子发生爆炸，人物面向镜头左前方，比例16:10"
 
 
 class Config(BaseModel):

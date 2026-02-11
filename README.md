@@ -107,7 +107,7 @@ _✨ NoneBot2 一个模板绘图插件 ✨_
 }
 ```
 
-- 最新API：柏拉图AI
+- 点击最新API：[柏拉图AI(AFF)](https://api.bltcy.ai/register?aff=SFGX54579)
 
 ## 🎉 使用
 ### 指令表

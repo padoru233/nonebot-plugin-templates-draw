@@ -574,7 +574,8 @@ async def _generate_template_images_core(
 
         try:
             async with httpx.AsyncClient(timeout=120) as client:
-                logger.info(f"[Attempt {attempt}] 发送请求 (Model: {plugin_config.gemini_model}, PDF模式: {use_pdf})")
+                current_model_name = plugin_config.doubao_model if plugin_config.api_type == 'doubao' else plugin_config.gemini_model
+                logger.info(f"[Attempt {attempt}] 发送请求 (Model: {current_model_name}, PDF模式: {use_pdf})")
 
                 url, headers, api_type = build_request_config(key, plugin_config.gemini_model)
                 payload = build_payload(api_type, images, prompt, use_pdf)

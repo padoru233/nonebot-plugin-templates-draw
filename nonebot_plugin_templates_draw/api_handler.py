@@ -149,6 +149,11 @@ async def process_images_from_content(
 
 def is_openai_compatible() -> bool:
     """检测是否使用 OpenAI 兼容模式"""
+    if plugin_config.api_type == 'openai':
+        return True
+    if plugin_config.api_type == 'doubao':
+        return False
+    # Backward compatibility for 'gemini' type with openai url
     url = plugin_config.gemini_api_url.lower()
     return "openai" in url or "/v1/chat/completions" in url
 
@@ -156,7 +161,7 @@ def get_valid_api_keys() -> list:
     """获取有效的 API Keys"""
     keys = plugin_config.gemini_api_keys
     if not keys or (len(keys) == 1 and keys[0] == "xxxxxx"):
-        raise RuntimeError("请先在 env 中配置有效的 Gemini API Key")
+        raise RuntimeError("请先在 env 中配置有效的 API Key (gemini_api_keys)")
     return keys
 
 def encode_image_to_base64(image: Image.Image) -> str:
@@ -170,13 +175,23 @@ def build_request_config(api_key: str, model_name: str) -> Tuple[str, Dict[str, 
     if is_openai_compatible():
         url = plugin_config.gemini_api_url
         if "chat/completions" not in url:
-            url = url.rstrip('/') + '/v1/chat/completions'
+            url = url.rstrip('/') + '/chat/completions'
 
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
         return url, headers, "openai"
+    elif plugin_config.api_type == 'doubao':
+        url = plugin_config.doubao_api_url.rstrip('/')
+        if "/images/generations" not in url:
+            url = f"{url}/images/generations"
+        
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        return url, headers, "doubao"
     else:
         base_url = plugin_config.gemini_api_url.rstrip('/')
         if base_url.endswith('/v1beta'):
@@ -234,7 +249,7 @@ def build_payload(
         # --- 第1轮：User 发送图片 ---
         user_content = [{
             "type": "text",
-            "text": "参考图片：",
+            "text":  f"参考图片：\n{prompt}" if prompt else "参考图片：",
             "extra_content": signature_payload
         }]
 
@@ -274,6 +289,26 @@ def build_payload(
         return {
             "model": plugin_config.gemini_model,
             "messages": messages
+        }
+
+    elif api_type == "doubao":
+        # 豆包 API (Image Generation)
+        if not images:
+            raise ValueError("Doubao API requires at least one image.")
+        
+        # Support single or multiple images
+        if len(images) == 1:
+            image_data = f"data:image/png;base64,{encode_image_to_base64(images[0])}"
+        else:
+            image_data = [f"data:image/png;base64,{encode_image_to_base64(img)}" for img in images]
+        
+        return {
+            "model": plugin_config.doubao_model,
+            "prompt": prompt,
+            "image": image_data, 
+            "response_format": "url",
+            # "size": "adaptive", 
+            # "watermark": True
         }
 
     else:   # Gemini Native
@@ -374,6 +409,24 @@ def parse_api_response(data: Dict[str, Any], api_type: str) -> Tuple[Optional[Un
 
         return content, None, None
 
+    elif api_type == "doubao":
+        data_list = data.get("data", [])
+        if not data_list:
+            return None, None, "Doubao API returned empty data list"
+
+        content = []
+        for item in data_list:
+            if "url" in item:
+                content.append({"type": "image_url", "image_url": {"url": item["url"]}})
+            elif "b64_json" in item:
+                # Handle base64 response if configured/returned
+                pass
+
+        if not content:
+            return None, None, "Doubao API data contained no URLs"
+        
+        return content, None, None
+
     else:  # Gemini
         prompt_feedback = data.get("promptFeedback", {})
         block_reason = prompt_feedback.get("blockReason")
@@ -469,6 +522,28 @@ def generate_final_error_message(max_attempts: int, last_error: str, api_connect
         )
 
 async def generate_template_images(
+    images: List[Image.Image],
+    prompt: Optional[str] = None
+) -> List[Tuple[Optional[bytes], Optional[str], Optional[str]]]:
+    """
+    对外接口：生成图片
+    根据 plugin_config.sequential_image_generation 配置决定是顺序生成还是批量生成
+    """
+    if not images:
+        raise RuntimeError("没有传入任何图片")
+
+    if plugin_config.sequential_image_generation:
+        results = []
+        for img in images:
+             # Process one by one
+             # Note: prompt is applied to all
+             res = await _generate_template_images_core([img], prompt)
+             results.extend(res)
+        return results
+    else:
+        return await _generate_template_images_core(images, prompt)
+
+async def _generate_template_images_core(
     images: List[Image.Image],
     prompt: Optional[str] = None
 ) -> List[Tuple[Optional[bytes], Optional[str], Optional[str]]]:

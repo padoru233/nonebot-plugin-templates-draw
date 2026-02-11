@@ -76,12 +76,16 @@ _✨ NoneBot2 一个模板绘图插件 ✨_
 
 | 配置项 | 必填 | 默认值 | 说明 |
 |:-----:|:----:|:----:|:----:|
+| TEMPLATES_DRAW__API_TYPE | 否 | - | api类型，可选 gemini, openai, doubao |
 | TEMPLATES_DRAW__GEMINI_API_URL | 是 | - | 看下方注释 |
 | TEMPLATES_DRAW__GEMINI_API_KEYS | 是 | ["xxxxxx"] | 需要付费key，填入你的多个API Key，例如 ['key1', 'key2', 'key3'] |
 | TEMPLATES_DRAW__GEMINI_MODEL | 否 | gemini-2.5-flash-image-preview | Gemini 绘图模型 |
 | TEMPLATES_DRAW__MAX_TOTAL_ATTEMPTS | 否 | 2 | 这一张图的最大尝试次数（包括首次尝试） |
 | TEMPLATES_DRAW__SEND_FORWARD_MSG | 否 | True | 使用合并转发来发图，默认开启 |
 | TEMPLATES_DRAW__GEMINI_PDF_JAILBREAK | 否 | False | 看下方注释 |
+| TEMPLATES_DRAW__DOUBAO_API_URL | 否 | https://ark.cn-beijing.volces.com/api/v3 | 豆包API地址 |
+| TEMPLATES_DRAW__GEMINI_MODEL | 否 | doubao-seededit-3-0-i2i-250628 | 豆包绘图模型 |
+| TEMPLATES_DRAW__SEQUENTIAL_IMAGE_GENERATION | 否 | False | 是否顺序生成图片（多图分别生成) |
 
 - Gemini API Url 默认为官方完整 Url `https://generativelanguage.googleapis.com/v1beta`，可以替换为中转 `https://xxxxx.xxx/v1beta` 如果想使用 OpenAI 兼容层（不推荐），可以替换为 `https://generativelanguage.googleapis.com/v1beta/openai` 或者中转 `https://xxxxx.xxx/v1/chat/completions`
 - ~~默认使用了很长的文本破限词，如果破限效果不好或者花费太高可以自定义JAILBREAK_PROMPT~~
